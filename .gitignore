@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+backend/data/
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS / editor
+.DS_Store
+*.log
+
+# Audio artifacts (keep the examples/demo file only)
+*.wav
+!examples/*.wav
+frontend/*.tsbuildinfo
