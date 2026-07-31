@@ -247,12 +247,16 @@ class Track:
         self.R[i:end] += sigR[:end - i] * gain
 
 
-def fft_reverb(sig, seed=7, rt=1.2, mix=0.3):
+def fft_reverb(sig, seed=7, rt=1.2):
+    """Return only the wet (reverb tail) signal."""
     n = int(SR * rt)
     ir = noise(n, seed) * np.exp(-np.arange(n) / SR / (rt * 0.3))
     ns = len(sig) + n
-    wet = np.fft.irfft(np.fft.rfft(sig, ns) * np.fft.rfft(ir, ns), ns)[:len(sig)]
-    return sig + wet * mix
+    fft_size = 1
+    while fft_size < ns:
+        fft_size <<= 1  # power-of-two FFTs are dramatically faster
+    wet = np.fft.irfft(np.fft.rfft(sig, fft_size) * np.fft.rfft(ir, fft_size), fft_size)[:len(sig)]
+    return wet
 
 
 def sidechain(sig, duck_positions, sr=SR, bpm=112):
@@ -296,18 +300,16 @@ def write_wav(path, audio_l, audio_r, sr=SR):
 
 
 def read_wav_mono(path, sr=SR):
-    import os
     with wave.open(path, "rb") as w:
         n = w.getnframes()
         data = np.frombuffer(w.readframes(n), dtype=np.int16)
         ch = w.getnchannels()
+        rate = w.getframerate()
         if ch == 2:
             data = data.reshape(-1, 2).mean(axis=1)
         audio = data.astype(float) / 32767.0
-    # resample if needed (nearest via np.interp on decimation)
-    if w.getframerate() != sr:
-        old_sr = w.getframerate()
+    if rate != sr and len(audio) > 1:
         x_old = np.linspace(0, len(audio), len(audio))
-        x_new = np.linspace(0, len(audio), int(len(audio) * sr / old_sr))
+        x_new = np.linspace(0, len(audio), int(len(audio) * sr / rate))
         audio = np.interp(x_new, x_old, audio)
     return audio

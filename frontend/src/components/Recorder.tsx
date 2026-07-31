@@ -6,6 +6,44 @@ interface Props {
   onError: (msg: string) => void;
 }
 
+async function toWav(blob: Blob): Promise<File> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const decoded = await audioContext.decodeAudioData(arrayBuffer);
+  const offline = new OfflineAudioContext(1, decoded.length, 44100);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start(0);
+  const rendered = await offline.startRendering();
+  const samples = rendered.getChannelData(0);
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 44100, true);
+  view.setUint32(28, 44100 * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buffer, 44).set(pcm);
+  return new File([buffer], "recording.wav", { type: "audio/wav" });
+}
+
 export default function Recorder({ onGenerated, onError }: Props) {
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -60,8 +98,8 @@ export default function Recorder({ onGenerated, onError }: Props) {
     if (!audioBlob) return;
     setLoading(true);
     try {
-      const file = new File([audioBlob], "recording.webm", { type: audioBlob.type });
-      const res = await generateRecording(file, genre);
+      const wav = await toWav(audioBlob);
+      const res = await generateRecording(wav, genre);
       setResult(res);
       setAudioBlob(null);
       onGenerated();

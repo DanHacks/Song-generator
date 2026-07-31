@@ -5,7 +5,7 @@ import tempfile
 
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import storage
@@ -13,9 +13,14 @@ from app.models import PromptRequest, LyricsRequest, GenerateResponse
 from app.music import engine
 from app.music.generator import generate_from_prompt, generate_from_lyrics, generate_from_recording
 from app.music.analysis import analyze_recording
-from app.config import assert_quota, tier_for
+from app.config import assert_quota
 
 app = FastAPI(title="SongForge", version="0.1.0")
+
+
+@app.exception_handler(PermissionError)
+async def permission_handler(request, exc):
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,11 +48,6 @@ def _render_and_store(client_id, L, R, meta):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/api/plans")
-def plans():
-    return {"tiers": tier_for(None) and None or {}}
 
 
 @app.get("/api/tiers")
@@ -96,11 +96,16 @@ async def gen_recording(
     cid = _client(x_client_id)
     assert_quota(cid)
     suffix = os.path.splitext(file.filename or "rec.wav")[1] or ".wav"
+    if suffix.lower() != ".wav":
+        raise HTTPException(400, "Only WAV recordings are supported. Record in the browser to convert automatically.")
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
         f.write(await file.read())
         tmp = f.name
     try:
-        analysis = analyze_recording(tmp)
+        try:
+            analysis = analyze_recording(tmp)
+        except Exception as exc:
+            raise HTTPException(400, "Could not analyze the recording: %s" % exc)
     finally:
         os.remove(tmp)
     L, R, meta = generate_from_recording(analysis, genre_name=genre)

@@ -42,10 +42,10 @@ export default function TrackList({ refreshKey, onError }: Props) {
               via {t.mode} {t.created_at ? "- " + new Date(t.created_at).toLocaleString() : ""}
             </span>
           </div>
-          {t.filename && <audio controls src={audioUrl("/data/" + t.filename)} />}
+          {t.audio_url && <audio controls src={audioUrl(t.audio_url)} />}
           <div className="track-actions">
-            {t.filename && (
-              <a href={audioUrl("/data/" + t.filename)} download>
+            {t.audio_url && (
+              <a href={audioUrl(t.audio_url)} download>
                 <button>Download</button>
               </a>
             )}

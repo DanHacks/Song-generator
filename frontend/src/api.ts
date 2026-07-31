@@ -11,6 +11,7 @@ export interface TrackMeta {
   duration_s: number;
   prompt?: string;
   lyrics?: string;
+  audio_url?: string;
   recording_analysis?: {
     bpm: number;
     key: string;

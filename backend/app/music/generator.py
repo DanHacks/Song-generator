@@ -165,21 +165,20 @@ def _mix(track, bpm, genre_name, root_midi, scale_name, seed):
     leadR[lead_start:] = R[lead_start:]
     delL = np.zeros(track.n); delR = np.zeros(track.n)
     dn = int(0.29 * engine.SR)
-    for ch_src, ch_dst in ((leadL, delL), (leadR, delR)):
-        ch_dst[dn:] += ch_src[:-dn] * 0.35
-        ch_dst[2 * dn:] += ch_src[:-2 * dn] * 0.15
+    delL[dn:] += leadL[:-dn] * 0.35
+    delL[2 * dn:] += leadL[:-2 * dn] * 0.15
+    delR[dn:] += leadR[:-dn] * 0.35
+    delR[2 * dn:] += leadR[:-2 * dn] * 0.15
     L = L + delL
     R = R + delR
 
-    wetL = engine.fft_reverb(L) * 1.0
-    wetR = engine.fft_reverb(R, seed=9) * 1.0
+    wetL = engine.fft_reverb(L, 7)
+    wetR = engine.fft_reverb(R, 9)
     L = L + wetL * 0.3
     R = R + wetR * 0.3
 
-    duck_pos = []
-    for bar in range(8, track.n // int(4 * 60.0 / bpm * engine.SR) + 1):
-        pass
     # sidechain on kick beats from bar 8 onward
+    duck_pos = []
     bar_len = int(4 * 60.0 / bpm * engine.SR)
     for i in range(8 * bar_len, track.n, bar_len):
         for kp in [0, 6]:

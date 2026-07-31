@@ -1,5 +1,6 @@
 """Track storage: saves WAV + metadata per client, scoped for future user accounts."""
 
+import datetime
 import json
 import os
 import re
@@ -31,7 +32,8 @@ def save_track(client_id, wav_path, meta):
     meta["id"] = track_id
     meta["filename"] = filename
     meta["path"] = final
-    meta["created_at"] = None
+    meta["audio_url"] = "/data/%s/%s" % (client_id, filename)
+    meta["created_at"] = datetime.datetime.utcnow().isoformat()
     with open(os.path.join(cdir, track_id + ".json"), "w") as f:
         json.dump(meta, f, indent=2, default=str)
     return track_id, final, meta
