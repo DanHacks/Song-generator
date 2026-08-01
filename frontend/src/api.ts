@@ -103,3 +103,55 @@ export function deleteTrack(id: string) {
 export function audioUrl(path: string) {
   return BASE + path;
 }
+
+export interface Plan {
+  label: string;
+  max_generations: number | null;
+  max_duration_s: number;
+  stems: boolean;
+  price_usd: number;
+  price_kes: number;
+}
+
+export interface ProvidersStatus {
+  mock: boolean;
+  mpesa: boolean;
+  stripe: boolean;
+}
+
+export interface PlansResponse {
+  plans: Record<string, Plan>;
+  providers: ProvidersStatus;
+}
+
+export interface BillingStatus {
+  tier: string;
+  label: string;
+  expires_at: string | null;
+  max_duration_s: number;
+  stems: boolean;
+  usage: { used: number; max: number | null; remaining: number | null };
+  payments: Array<{ plan: string; source: string; reference: string; date: string; amount: number }>;
+}
+
+export function getPlans() {
+  return api<PlansResponse>("/api/plans");
+}
+
+export function getBillingStatus() {
+  return api<BillingStatus>("/api/billing/status");
+}
+
+export async function checkout(plan: string, provider: string, phone?: string) {
+  return api<Record<string, unknown>>("/api/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan, provider, phone: phone || null }),
+  });
+}
+
+export async function mockConfirm(checkoutId: string) {
+  return api<Record<string, unknown>>("/api/billing/mock/confirm", {
+    method: "POST",
+    body: JSON.stringify({ checkout_id: checkoutId }),
+  });
+}

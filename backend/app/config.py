@@ -8,6 +8,7 @@ TIERS = {
         "stems": False,
         "priority": "normal",
         "price_usd": 0,
+        "price_kes": 0,
     },
     "pro": {
         "label": "Pro",
@@ -16,6 +17,7 @@ TIERS = {
         "stems": True,
         "priority": "high",
         "price_usd": 9,
+        "price_kes": 1200,
     },
     "studio": {
         "label": "Studio",
@@ -24,6 +26,7 @@ TIERS = {
         "stems": True,
         "priority": "urgent",
         "price_usd": 29,
+        "price_kes": 3900,
     },
 }
 
@@ -31,8 +34,11 @@ DEFAULT_TIER = "free"
 
 
 def tier_for(client_id):
-    """In the future, look up the paying tier from a payments provider. Placeholder."""
-    return TIERS[DEFAULT_TIER]
+    """Return the active tier for a client, consulting billing subscriptions first."""
+    from . import billing  # lazy import avoids a circular dependency
+
+    name = billing.active_tier_name(client_id)
+    return TIERS[name]
 
 
 def generation_count(client_id):

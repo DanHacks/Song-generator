@@ -15,7 +15,7 @@ Built with a fully procedural audio synthesis engine (no paid AI APIs, no sample
 - **Melody engine**: syllable-driven lyric-to-melody conversion with phrase contour and line resolution
 - **Full production chain**: sidechain pumping, FFT convolution reverb, stereo delay, soft-clip limiting, fade-outs
 - **Track library**: per-client storage, playback, download and delete
-- **Subscription-ready**: tier/quota system (`free`/`pro`/`studio`) is built in and just needs a payments provider
+- **Subscriptions**: M-Pesa (Daraja STK Push), Stripe, and a sandbox mock provider with tier/quota enforcement (`free`/`pro`/`studio`)
 
 ## Tech Stack
 
@@ -94,8 +94,26 @@ All generation endpoints accept an `X-Client-Id` header that scopes storage per 
 | --- | --- | --- |
 | GET | `/api/tracks` | List generated tracks |
 | DELETE | `/api/tracks/{id}` | Delete a track |
+| GET | `/api/plans` | Subscription plans + provider availability |
+| GET | `/api/billing/status` | Current plan, expiry & generation usage |
+| POST | `/api/billing/checkout` | Start checkout (`plan`, `provider` `mock\|mpesa\|stripe`, `phone` for M-Pesa) |
+| POST | `/api/billing/mock/confirm` | Confirm a mock checkout (dev/demo) |
+| POST | `/api/billing/mpesa/callback` | M-Pesa STK Push callback (webhook) |
+| POST | `/api/billing/stripe/webhook` | Stripe webhook |
 | GET | `/api/tiers` | Subscription tiers |
 | GET | `/api/health` | Health check |
+
+## Payments
+
+Providers activate automatically when their credentials are present:
+
+| Provider | Environment variables |
+| --- | --- |
+| M-Pesa (Daraja STK Push) | `MPESA_ENV` (`sandbox`/`production`), `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY`, `MPESA_SHORTCODE`, `MPESA_CALLBACK_BASE` (public HTTPS URL for the callback) |
+| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `APP_URL` |
+| Mock (sandbox demo) | none — always available for local testing |
+
+Without credentials, the **mock** provider lets the whole flow run locally: start checkout, confirm, and the plan activates (no real money moves).
 
 ## Project Layout
 
@@ -112,21 +130,22 @@ backend/
       analysis.py         Tempo & key detection for recordings
       generator.py        Arrangement builder + prompt parsing
     config.py             Subscription tiers & quota enforcement
+    billing.py            Subscriptions: M-Pesa / Stripe / mock providers
     storage.py            Per-client WAV/JSON storage
     models.py             Pydantic request models
 frontend/
   src/
-    App.tsx               Tabs: Prompt / Lyrics / Record + library
+    App.tsx               Tabs: Prompt / Lyrics / Record / Library / Plans
     api.ts                API client with client-id scoping
-    components/           Recorder, LyricsForm, PromptForm, TrackList
+    components/           Recorder, LyricsForm, PromptForm, TrackList, Pricing
 ```
 
 ## Subscription Roadmap
 
-The tier system (`config.py`) is already enforced server-side. To launch paid plans:
+Billing is live (M-Pesa, Stripe, mock). Remaining work:
 
 1. Add user auth (JWT) and replace the `X-Client-Id` header
-2. Wire `tier_for(client_id)` to a payments provider (Stripe/M-Pesa)
+2. Create Stripe recurring price IDs for true auto-renewing subscriptions
 3. Serve `stems` (instrumental/melody split) for Pro/Studio tiers
 4. Add generation job queue for long tracks
 

@@ -20,3 +20,9 @@ class GenerateResponse(BaseModel):
     id: str
     audio_url: str
     meta: dict
+
+
+class CheckoutRequest(BaseModel):
+    plan: str = Field(..., pattern="^(pro|studio)$")
+    provider: str = Field("mock", pattern="^(mock|mpesa|stripe)$")
+    phone: Optional[str] = None

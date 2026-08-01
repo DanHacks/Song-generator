@@ -3,8 +3,9 @@ import Recorder from "./components/Recorder";
 import LyricsForm from "./components/LyricsForm";
 import PromptForm from "./components/PromptForm";
 import TrackList from "./components/TrackList";
+import Pricing from "./components/Pricing";
 
-type Tab = "prompt" | "lyrics" | "record" | "library";
+type Tab = "prompt" | "lyrics" | "record" | "library" | "plans";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("prompt");
@@ -41,17 +42,25 @@ export default function App() {
         <button className={"tab-btn" + (tab === "record" ? " active" : "")} onClick={() => setTab("record")}>
           Record Voice
         </button>
+        <button className={"tab-btn" + (tab === "library" ? " active" : "")} onClick={() => setTab("library")}>
+          Library
+        </button>
+        <button className={"tab-btn plans" + (tab === "plans" ? " active" : "")} onClick={() => setTab("plans")}>
+          Plans
+        </button>
       </div>
 
       {tab === "prompt" && <PromptForm onGenerated={refresh} onError={notify} />}
       {tab === "lyrics" && <LyricsForm onGenerated={refresh} onError={notify} />}
       {tab === "record" && <Recorder onGenerated={refresh} onError={notify} />}
-
-      <div className="panel">
-        <h2>Your Library</h2>
-        <p className="sub">Everything you've generated, stored on your device's client profile.</p>
-        <TrackList refreshKey={refreshKey} onError={notify} />
-      </div>
+      {tab === "library" && (
+        <div className="panel">
+          <h2>Your Library</h2>
+          <p className="sub">Everything you've generated, stored on your device's client profile.</p>
+          <TrackList refreshKey={refreshKey} onError={notify} />
+        </div>
+      )}
+      {tab === "plans" && <Pricing onError={notify} />}
 
       {toast && <div className="toast">{toast}</div>}
     </div>

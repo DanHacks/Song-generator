@@ -3,17 +3,17 @@
 import os
 import tempfile
 
-from fastapi import FastAPI, UploadFile, File, Header, HTTPException
+from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import storage
-from app.models import PromptRequest, LyricsRequest, GenerateResponse
+from app import storage, billing
+from app.models import PromptRequest, LyricsRequest, GenerateResponse, CheckoutRequest
 from app.music import engine
 from app.music.generator import generate_from_prompt, generate_from_lyrics, generate_from_recording
 from app.music.analysis import analyze_recording
-from app.config import assert_quota
+from app.config import assert_quota, TIERS
 
 app = FastAPI(title="SongForge", version="0.1.0")
 
@@ -52,8 +52,93 @@ def health():
 
 @app.get("/api/tiers")
 def tiers():
-    from app.config import TIERS
     return TIERS
+
+
+@app.get("/api/plans")
+def plans():
+    from app.config import TIERS
+    return {"plans": TIERS, "providers": billing.providers_status()}
+
+
+@app.get("/api/billing/status")
+def billing_status(x_client_id: str | None = Header(default=None)):
+    cid = _client(x_client_id)
+    sub = billing.get_subscription(cid)
+    tier = TIERS[billing.active_tier_name(cid)]
+    return {
+        "tier": billing.active_tier_name(cid),
+        "label": tier["label"],
+        "expires_at": sub.get("expires_at"),
+        "max_duration_s": tier["max_duration_s"],
+        "stems": tier["stems"],
+        "usage": billing.usage(cid),
+        "payments": sub.get("payments", []),
+    }
+
+
+@app.post("/api/billing/checkout")
+def checkout(req: CheckoutRequest, x_client_id: str | None = Header(default=None)):
+    cid = _client(x_client_id)
+    try:
+        if req.provider == "mock":
+            record = billing.mock_checkout(cid, req.plan)
+            return {"provider": "mock", "checkout_id": record["id"], "status": record["status"],
+                    "amount_kes": record["amount"], "plan": req.plan}
+        if req.provider == "mpesa":
+            if not req.phone:
+                raise HTTPException(400, "Phone number is required for M-Pesa.")
+            result = billing.initiate_mpesa(cid, req.plan, req.phone)
+            record = {
+                "provider": "mpesa",
+                "merchant_request_id": result.get("MerchantRequestID"),
+                "checkout_request_id": result.get("CheckoutRequestID"),
+                "response_code": result.get("ResponseCode"),
+                "response_desc": result.get("ResponseDescription"),
+                "plan": req.plan,
+                "status": "pending",
+                "amount_kes": TIERS[req.plan]["price_kes"],
+            }
+            billing._ensure_dirs()
+            import json
+            with open(os.path.join(billing.CHECKOUT_DIR, record["merchant_request_id"] + ".json"), "w") as f:
+                json.dump({**record, "client_id": cid}, f)
+            return record
+        if req.provider == "stripe":
+            session = billing.create_stripe_checkout(cid, req.plan)
+            return {"provider": "stripe", "session_id": session["id"], "url": session["url"], "plan": req.plan}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, "Payment initiation failed: %s" % exc)
+    raise HTTPException(400, "Unsupported provider.")
+
+
+@app.post("/api/billing/mock/confirm")
+def mock_confirm(body: dict, x_client_id: str | None = Header(default=None)):
+    checkout_id = body.get("checkout_id")
+    if not checkout_id:
+        raise HTTPException(400, "checkout_id is required.")
+    record = billing.mock_confirm(checkout_id)
+    if not record:
+        raise HTTPException(404, "Checkout not found.")
+    return {"status": record["status"], "tier": record["plan"], "expires_at": billing.get_subscription(record["client_id"])["expires_at"]}
+
+
+@app.post("/api/billing/mpesa/callback")
+async def mpesa_callback(request: Request):
+    payload = await request.json()
+    return billing.handle_mpesa_callback(payload)
+
+
+@app.post("/api/billing/stripe/webhook")
+async def stripe_webhook(request: Request):
+    raw = await request.body()
+    sig = request.headers.get("stripe-signature")
+    result = billing.handle_stripe_webhook(raw, sig)
+    if result is None:
+        raise HTTPException(400, "Invalid signature.")
+    return result
 
 
 @app.get("/api/tracks", response_model=list)
