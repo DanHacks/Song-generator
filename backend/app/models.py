@@ -26,3 +26,13 @@ class CheckoutRequest(BaseModel):
     plan: str = Field(..., pattern="^(pro|studio)$")
     provider: str = Field("mock", pattern="^(mock|mpesa|stripe)$")
     phone: Optional[str] = None
+
+
+class SignupRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=32)
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=32)
+    password: str = Field(..., min_length=1, max_length=128)
