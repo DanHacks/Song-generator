@@ -242,3 +242,9 @@ async def gen_recording(
     meta["recording_name"] = file.filename
     track_id, _, meta = _render_and_store(cid, L, R, meta)
     return GenerateResponse(id=track_id, audio_url="/data/%s/%s" % (cid, meta["filename"]), meta=meta)
+
+
+# Serve the built React frontend (must be mounted last so /api and /data win).
+_FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+if os.path.isdir(_FRONTEND_DIST):
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
