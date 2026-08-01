@@ -63,6 +63,20 @@ npm run dev
 
 Open http://localhost:5173 (Vite proxies `/api` and `/data` to the backend).
 
+## Share it online
+
+```bash
+./scripts/start.sh          # backend + frontend + public Cloudflare tunnel
+./scripts/start.sh --stop   # stop everything
+```
+
+`start.sh` prints a public `https://*.trycloudflare.com` URL that tunnels straight
+to the local API — no account or credit card needed. Point `MPESA_CALLBACK_BASE`
+at it in `backend/.env` to receive M-Pesa callbacks (note: quick-tunnel URLs are
+ephemeral; use a named tunnel + domain for a permanent URL).
+
+Local config lives in `backend/.env` (copy `backend/.env.example`).
+
 ## API
 
 ### POST /api/generate/prompt
