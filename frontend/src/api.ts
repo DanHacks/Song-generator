@@ -34,12 +34,25 @@ if (!clientId) {
   localStorage.setItem("songforge_client_id", clientId);
 }
 
+let token: string | null = localStorage.getItem("sautigen_token");
+
+export function setToken(t: string | null) {
+  token = t;
+  if (t) localStorage.setItem("sautigen_token", t);
+  else localStorage.removeItem("sautigen_token");
+}
+
+export function authHeaders(): Record<string, string> {
+  return token ? { Authorization: "Bearer " + token } : {};
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(BASE + path, {
     ...options,
     headers: {
       "X-Client-Id": clientId!,
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(options.headers || {}),
     },
   });
@@ -54,6 +67,24 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error(msg);
   }
   return res.json() as Promise<T>;
+}
+
+export function signup(username: string, password: string) {
+  return api<{ username: string; client_id: string; token: string }>("/api/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function login(username: string, password: string) {
+  return api<{ username: string; client_id: string; token: string }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function getMe() {
+  return api<{ username: string; client_id: string }>("/api/auth/me");
 }
 
 export function generatePrompt(prompt: string, duration: number) {
@@ -76,7 +107,7 @@ export async function generateRecording(file: File, genre: string) {
   if (genre) form.append("genre", genre);
   const res = await fetch(BASE + "/api/generate/recording", {
     method: "POST",
-    headers: { "X-Client-Id": clientId! },
+    headers: { "X-Client-Id": clientId!, ...authHeaders() },
     body: form,
   });
   if (!res.ok) {

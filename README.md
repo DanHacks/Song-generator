@@ -10,6 +10,7 @@ Built with a fully procedural audio synthesis engine (no paid AI APIs, no sample
   - Prompt a track: describe genre, mood, tempo and key in plain English
   - Upload lyrics: the engine scans syllables and mood, composes a melody line and arranges a full backing track
   - Record your voice: tempo and key are detected from your recording, then a matching backing track is generated
+- **Accounts**: JWT signup/login; your library, quota and subscription follow your account on any device
 - **7 genre presets**: Afrobeats, Gospel, Hip Hop, Amapiano, Ballad, EDM, Dancehall
 - **Key & tempo intelligence**: keys, scales (major/minor/dorian/pentatonic/hijaz) and prompt parsing for "in D minor", "110 BPM", "fast", "slow", moods and genre aliases
 - **Melody engine**: syllable-driven lyric-to-melody conversion with phrase contour and line resolution
@@ -86,7 +87,17 @@ Open http://localhost:5173 (Vite proxies `/api` and `/data` to the backend).
 file: recording.webm | genre: afrobeats
 ```
 
-All generation endpoints accept an `X-Client-Id` header that scopes storage per user.
+All generation endpoints accept an `X-Client-Id` header that scopes storage per user. Logged-in users can instead send `Authorization: Bearer <token>` — the account's own client id is used automatically.
+
+## Auth
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/auth/signup` | Create account (`username`, `password`) → returns JWT |
+| POST | `/api/auth/login` | Log in → returns JWT (30-day) |
+| GET | `/api/auth/me` | Current user (needs Bearer token) |
+
+Passwords are hashed with PBKDF2-HMAC-SHA256 (200k iterations) and sessions are HS256 JWTs. Tokens auto-migrate the legacy `X-Client-Id` scoping, so anonymous users still work without an account.
 
 ### Others
 
@@ -131,23 +142,24 @@ backend/
       generator.py        Arrangement builder + prompt parsing
     config.py             Subscription tiers & quota enforcement
     billing.py            Subscriptions: M-Pesa / Stripe / mock providers
+    auth.py               User accounts + JWT sessions (stdlib PBKDF2 / HS256)
     storage.py            Per-client WAV/JSON storage
     models.py             Pydantic request models
 frontend/
   src/
-    App.tsx               Tabs: Prompt / Lyrics / Record / Library / Plans
-    api.ts                API client with client-id scoping
-    components/           Recorder, LyricsForm, PromptForm, TrackList, Pricing
+    App.tsx               Tabs: Prompt / Lyrics / Record / Library / Plans + auth
+    api.ts                API client with client-id scoping + JWT bearer
+    components/           Recorder, LyricsForm, PromptForm, TrackList, Pricing, Auth
 ```
 
 ## Subscription Roadmap
 
-Billing is live (M-Pesa, Stripe, mock). Remaining work:
+Auth + billing are live (JWT accounts; M-Pesa, Stripe, mock). Remaining work:
 
-1. Add user auth (JWT) and replace the `X-Client-Id` header
-2. Create Stripe recurring price IDs for true auto-renewing subscriptions
-3. Serve `stems` (instrumental/melody split) for Pro/Studio tiers
-4. Add generation job queue for long tracks
+1. Create Stripe recurring price IDs for true auto-renewing subscriptions
+2. Serve `stems` (instrumental/melody split) for Pro/Studio tiers
+3. Add generation job queue for long tracks
+4. Email/password reset flows
 
 ## Examples
 

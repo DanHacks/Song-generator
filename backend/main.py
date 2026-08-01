@@ -8,8 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import storage, billing
-from app.models import PromptRequest, LyricsRequest, GenerateResponse, CheckoutRequest
+from app import storage, billing, auth
+from app.models import (
+    PromptRequest,
+    LyricsRequest,
+    GenerateResponse,
+    CheckoutRequest,
+    SignupRequest,
+    LoginRequest,
+)
 from app.music import engine
 from app.music.generator import generate_from_prompt, generate_from_lyrics, generate_from_recording
 from app.music.analysis import analyze_recording
@@ -33,8 +40,8 @@ app.add_middleware(
 app.mount("/data", StaticFiles(directory=storage.DATA_DIR), name="data")
 
 
-def _client(header_value):
-    return header_value if header_value else "anonymous"
+def _client(authorization: str | None, header_value: str | None):
+    return auth.resolve_client(authorization, header_value)
 
 
 def _render_and_store(client_id, L, R, meta):
@@ -61,9 +68,42 @@ def plans():
     return {"plans": TIERS, "providers": billing.providers_status()}
 
 
+@app.post("/api/auth/signup")
+def auth_signup(req: SignupRequest):
+    try:
+        user = auth.signup(req.username, req.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {
+        "username": user["username"],
+        "client_id": user["client_id"],
+        "token": auth.encode_token(user["username"]),
+    }
+
+
+@app.post("/api/auth/login")
+def auth_login(req: LoginRequest):
+    user = auth.verify(req.username, req.password)
+    if not user:
+        raise HTTPException(401, "Invalid username or password.")
+    return {
+        "username": user["username"],
+        "client_id": user["client_id"],
+        "token": auth.encode_token(user["username"]),
+    }
+
+
+@app.get("/api/auth/me")
+def auth_me(authorization: str | None = Header(default=None)):
+    user = auth.user_from_token(authorization[7:].strip()) if authorization and authorization.lower().startswith("bearer ") else None
+    if not user:
+        raise HTTPException(401, "Not logged in.")
+    return {"username": user["username"], "client_id": user["client_id"]}
+
+
 @app.get("/api/billing/status")
-def billing_status(x_client_id: str | None = Header(default=None)):
-    cid = _client(x_client_id)
+def billing_status(authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    cid = _client(authorization, x_client_id)
     sub = billing.get_subscription(cid)
     tier = TIERS[billing.active_tier_name(cid)]
     return {
@@ -78,8 +118,8 @@ def billing_status(x_client_id: str | None = Header(default=None)):
 
 
 @app.post("/api/billing/checkout")
-def checkout(req: CheckoutRequest, x_client_id: str | None = Header(default=None)):
-    cid = _client(x_client_id)
+def checkout(req: CheckoutRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    cid = _client(authorization, x_client_id)
     try:
         if req.provider == "mock":
             record = billing.mock_checkout(cid, req.plan)
@@ -115,7 +155,7 @@ def checkout(req: CheckoutRequest, x_client_id: str | None = Header(default=None
 
 
 @app.post("/api/billing/mock/confirm")
-def mock_confirm(body: dict, x_client_id: str | None = Header(default=None)):
+def mock_confirm(body: dict, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
     checkout_id = body.get("checkout_id")
     if not checkout_id:
         raise HTTPException(400, "checkout_id is required.")
@@ -142,21 +182,21 @@ async def stripe_webhook(request: Request):
 
 
 @app.get("/api/tracks", response_model=list)
-def tracks(x_client_id: str | None = Header(default=None)):
-    return storage.list_tracks(x_client_id or "anonymous")
+def tracks(authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    return storage.list_tracks(_client(authorization, x_client_id))
 
 
 @app.delete("/api/tracks/{track_id}")
-def delete(track_id: str, x_client_id: str | None = Header(default=None)):
-    ok = storage.delete_track(x_client_id or "anonymous", track_id)
+def delete(track_id: str, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    ok = storage.delete_track(_client(authorization, x_client_id), track_id)
     if not ok:
         raise HTTPException(404, "Track not found")
     return {"deleted": True}
 
 
 @app.post("/api/generate/prompt", response_model=GenerateResponse)
-def gen_prompt(req: PromptRequest, x_client_id: str | None = Header(default=None)):
-    cid = _client(x_client_id)
+def gen_prompt(req: PromptRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    cid = _client(authorization, x_client_id)
     assert_quota(cid)
     L, R, meta = generate_from_prompt(req.prompt, duration_s=req.duration_s)
     track_id, _, meta = _render_and_store(cid, L, R, meta)
@@ -164,8 +204,8 @@ def gen_prompt(req: PromptRequest, x_client_id: str | None = Header(default=None
 
 
 @app.post("/api/generate/lyrics", response_model=GenerateResponse)
-def gen_lyrics(req: LyricsRequest, x_client_id: str | None = Header(default=None)):
-    cid = _client(x_client_id)
+def gen_lyrics(req: LyricsRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    cid = _client(authorization, x_client_id)
     assert_quota(cid)
     L, R, meta = generate_from_lyrics(req.lyrics, duration_s=req.duration_s, genre_name=req.genre)
     track_id, _, meta = _render_and_store(cid, L, R, meta)
@@ -176,9 +216,10 @@ def gen_lyrics(req: LyricsRequest, x_client_id: str | None = Header(default=None
 async def gen_recording(
     file: UploadFile = File(...),
     genre: str | None = File(default=None),
+    authorization: str | None = Header(default=None),
     x_client_id: str | None = Header(default=None),
 ):
-    cid = _client(x_client_id)
+    cid = _client(authorization, x_client_id)
     assert_quota(cid)
     suffix = os.path.splitext(file.filename or "rec.wav")[1] or ".wav"
     if suffix.lower() != ".wav":

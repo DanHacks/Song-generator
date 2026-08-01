@@ -4,6 +4,7 @@ import LyricsForm from "./components/LyricsForm";
 import PromptForm from "./components/PromptForm";
 import TrackList from "./components/TrackList";
 import Pricing from "./components/Pricing";
+import Auth from "./components/Auth";
 
 type Tab = "prompt" | "lyrics" | "record" | "library" | "plans";
 
@@ -31,6 +32,8 @@ export default function App() {
           <span style={{ opacity: 0.8 }}>Building the future of African tech.</span>
         </p>
       </div>
+
+      <Auth onAuthed={refresh} onError={notify} />
 
       <div className="tabs">
         <button className={"tab-btn" + (tab === "prompt" ? " active" : "")} onClick={() => setTab("prompt")}>

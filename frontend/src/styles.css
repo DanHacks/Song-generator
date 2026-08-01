@@ -420,3 +420,57 @@ audio {
 .sub.err {
   color: #fca5a5;
 }
+
+/* Auth */
+.auth-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0 auto 18px;
+  max-width: 920px;
+}
+.auth-input {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  color: #e2e8f0;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  outline: none;
+  width: 180px;
+}
+.auth-input:focus {
+  border-color: #0ea5e9;
+}
+.auth-btn {
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-btn:hover {
+  background: #0284c7;
+}
+.auth-link {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.auth-link:hover {
+  color: #cbd5e1;
+}
+.auth-name {
+  color: #cbd5e1;
+  font-size: 14px;
+}
+.auth-name b {
+  color: #f1f5f9;
+}
