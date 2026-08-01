@@ -17,3 +17,6 @@ frontend/dist/
 *.wav
 !examples/*.wav
 frontend/*.tsbuildinfo
+
+# Local secrets
+backend/.env
