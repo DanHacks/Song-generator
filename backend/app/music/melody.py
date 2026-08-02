@@ -55,6 +55,19 @@ def _rhythm_from_words(words, beats_per_line):
 
 def lyrics_to_melody(lyrics, root_midi, scale_name, seed=None):
     """Convert lyrics into (note, beats) list. note is midi or None (rest)."""
+    result = []
+    for line in lyrics_to_lines_melody(lyrics, root_midi, scale_name, seed=seed):
+        result.extend(line["notes"])
+    return result
+
+
+def lyrics_to_lines_melody(lyrics, root_midi, scale_name, seed=None):
+    """Convert lyrics into per-line melody structure.
+
+    Each entry: {"text", "words", "beats", "notes"}. notes is a list of
+    (midi_or_None, beats) matching what lyrics_to_melody flattens, so vocal
+    synthesis can align speech to the composed melody line by line.
+    """
     rng = np.random.default_rng(seed if seed is not None else _seed_for(lyrics))
     lines = split_lines(lyrics)
     scale = SCALES[scale_name]
@@ -64,15 +77,16 @@ def lyrics_to_melody(lyrics, root_midi, scale_name, seed=None):
         words = re.findall(r"[\w']+|[.,!?;:]", line)
         words = [w for w in words if re.match(r"[\w']+", w)]
         if not words:
-            result.append((None, 2.0))
+            result.append({"text": line, "words": [], "beats": 2.0, "notes": [(None, 2.0)]})
             continue
         beats = 4.0 if phrase % 2 == 0 else 6.0
         rhythm = _rhythm_from_words(words, beats)
         start_degree = [5, 0, 3, 2, 4, 1][phrase % 6]
         degree = start_degree
+        notes = []
         for b, stress in rhythm:
             if rng.random() < 0.06:
-                result.append((None, b))
+                notes.append((None, b))
                 continue
             degree = max(0, degree + int(rng.choice([-2, -1, 0, 1, 1, 2])))
             degree = min(degree, 5)
@@ -85,12 +99,13 @@ def lyrics_to_melody(lyrics, root_midi, scale_name, seed=None):
                 midi -= 12
             if midi < root_midi + 7:
                 midi += 12
-            result.append((midi, b))
+            notes.append((midi, b))
         # end of line resolution
         resolution = root_midi if phrase % 2 == 0 else root_midi + scale[4] - scale[0]
-        result.append((resolution, 1.0))
-        result.append((None, 1.0))
+        notes.append((resolution, 1.0))
+        notes.append((None, 1.0))
         phrase += 1
+        result.append({"text": line, "words": words, "beats": beats, "notes": notes})
     return result
 
 

@@ -94,6 +94,23 @@ export default function PromptForm({ onGenerated, onError }: Props) {
             <span className="chip">{result.meta.bpm} BPM</span>
           </div>
           <audio controls src={result.audio_url} />
+          {result.meta.spec?.sections && (
+            <div className="structure">
+              <h4>Song structure</h4>
+              <ol className="section-list">
+                {result.meta.spec.sections.map(
+                  (sec: { name: string; duration: string; vocal_style: string; variation: string }, i: number) => (
+                    <li key={i} className="section-row">
+                      <span className="section-name">{sec.name}</span>
+                      <span className="section-time">{sec.duration}</span>
+                      <span className="section-vocals">{sec.vocal_style}</span>
+                      <span className="section-variation">{sec.variation}</span>
+                    </li>
+                  ),
+                )}
+              </ol>
+            </div>
+          )}
         </div>
       )}
     </div>

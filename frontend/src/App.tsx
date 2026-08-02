@@ -5,8 +5,9 @@ import PromptForm from "./components/PromptForm";
 import TrackList from "./components/TrackList";
 import Pricing from "./components/Pricing";
 import Auth from "./components/Auth";
+import VoiceStudio from "./components/VoiceStudio";
 
-type Tab = "prompt" | "lyrics" | "record" | "library" | "plans";
+type Tab = "prompt" | "lyrics" | "voice" | "record" | "library" | "plans";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("prompt");
@@ -42,6 +43,9 @@ export default function App() {
         <button className={"tab-btn" + (tab === "lyrics" ? " active" : "")} onClick={() => setTab("lyrics")}>
           Lyrics
         </button>
+        <button className={"tab-btn" + (tab === "voice" ? " active" : "")} onClick={() => setTab("voice")}>
+          Voice
+        </button>
         <button className={"tab-btn" + (tab === "record" ? " active" : "")} onClick={() => setTab("record")}>
           Record Voice
         </button>
@@ -55,6 +59,7 @@ export default function App() {
 
       {tab === "prompt" && <PromptForm onGenerated={refresh} onError={notify} />}
       {tab === "lyrics" && <LyricsForm onGenerated={refresh} onError={notify} />}
+      {tab === "voice" && <VoiceStudio onError={notify} />}
       {tab === "record" && <Recorder onGenerated={refresh} onError={notify} />}
       {tab === "library" && (
         <div className="panel">

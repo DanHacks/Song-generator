@@ -16,6 +16,7 @@ from app import storage, billing, auth
 from app.models import (
     PromptRequest,
     LyricsRequest,
+    TTSRequest,
     GenerateResponse,
     CheckoutRequest,
     SignupRequest,
@@ -211,9 +212,48 @@ def gen_prompt(req: PromptRequest, authorization: str | None = Header(default=No
 def gen_lyrics(req: LyricsRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
     cid = _client(authorization, x_client_id)
     assert_quota(cid)
-    L, R, meta = generate_from_lyrics(req.lyrics, duration_s=req.duration_s, genre_name=req.genre)
+    L, R, meta = generate_from_lyrics(
+        req.lyrics, duration_s=req.duration_s, genre_name=req.genre,
+        vocal_style=req.vocal_style or "none", voice=req.voice,
+    )
     track_id, _, meta = _render_and_store(cid, L, R, meta)
     return GenerateResponse(id=track_id, audio_url="/data/%s/%s" % (cid, meta["filename"]), meta=meta)
+
+
+@app.post("/api/tts")
+def gen_tts(req: TTSRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
+    cid = _client(authorization, x_client_id)
+    from app.music import vocals
+
+    voice = req.voice or vocals.DEFAULT_VOICE
+    audio, dur = vocals.render_tts(req.text, voice=voice, rate=req.rate, pitch=req.pitch)
+    if audio is None:
+        raise HTTPException(502, "Voice synthesis unavailable. Check your internet connection.")
+    import wave
+
+    import numpy as np
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        tmp = f.name
+    try:
+        with wave.open(tmp, "wb") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(vocals.SR)
+            p = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+            f.writeframes(p.tobytes())
+        meta = {
+            "mode": "tts",
+            "text": req.text[:500],
+            "voice": voice,
+            "rate": req.rate or "+0%",
+            "pitch": req.pitch or "+0Hz",
+            "duration_s": dur,
+        }
+        meta = storage.save_tts(cid, tmp, meta)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return {"id": meta["id"], "audio_url": meta["audio_url"], "meta": meta}
 
 
 @app.post("/api/generate/recording")

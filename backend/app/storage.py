@@ -70,3 +70,19 @@ def delete_track(client_id, track_id):
         os.remove(path)
     os.remove(os.path.join(_client_dir(client_id), track_id + ".json"))
     return True
+
+
+def save_tts(client_id, wav_path, meta):
+    """Store a standalone TTS clip (not a track) under {client}/tts/."""
+    cdir = _client_dir(client_id)
+    tts_dir = os.path.join(cdir, "tts")
+    os.makedirs(tts_dir, exist_ok=True)
+    tts_id = uuid.uuid4().hex[:12]
+    filename = "speech_%s.wav" % tts_id
+    final = os.path.join(tts_dir, filename)
+    os.replace(wav_path, final)
+    meta["id"] = tts_id
+    meta["filename"] = filename
+    meta["audio_url"] = "/data/%s/tts/%s" % (client_id, filename)
+    meta["created_at"] = datetime.datetime.utcnow().isoformat()
+    return meta

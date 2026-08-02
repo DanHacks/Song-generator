@@ -4,84 +4,144 @@ import numpy as np
 
 from . import engine
 from .genres import GENRES, GENRE_ALIASES, TEMPO_WORDS, BASS_PATTERNS, DRUM_PATTERNS
-from .scales import name_to_midi, parse_key, scale_degrees, midi_to_freq
-from .melody import lyrics_to_melody, random_melody, lyrics_mood, _seed_for
+from .scales import name_to_midi, parse_key, scale_degrees, midi_to_freq, midi_to_name
+from .melody import lyrics_to_melody, lyrics_to_lines_melody, random_melody, lyrics_mood, _seed_for
+from .arrangement import build_sections, vocal_start_bar, section_times, variation_label
 
 
-def _intensity_for(bar, n_bars, intro_end, build_end, breakdown):
-    if bar < intro_end:
-        return 0.0
-    if bar < build_end:
-        return 0.6
-    if breakdown and breakdown[0] <= bar < breakdown[1]:
-        return 0.0
-    return 1.0
+def _bass_variant(genre_name, variant):
+    """Alternative bass rhythms for anti-repetition (variant 0 = base)."""
+    base = BASS_PATTERNS[genre_name]
+    if variant == 1:
+        off = [(min(p + 1, 7), l) for p, l in base]
+        return off or [(0, 2)]
+    if variant == 2:
+        if len(base) >= 3:
+            return [(0, 1), (1, 1), (2, 1)] + base[2:]
+        return base
+    return base
 
 
-def _play_drums(track, bar, pattern, intensity):
+def _play_drums(track, bar, pattern, energy, density=1.0, width=1.0, style=0, extra=None):
     start = bar * track.bar()
-    if intensity <= 0:
+    if energy <= 0 or not pattern:
         return
-    g = intensity
-    for pos in pattern["kick"]:
+    g = min(energy, 1.15)
+    kick = list(pattern["kick"])
+    snare = list(pattern["snare"])
+    clap = list(pattern["clap"])
+    open_hat = list(pattern["open_hat"])
+    shaker = list(pattern["shaker"])
+    cowbell = list(pattern["cowbell"])
+    hat8 = bool(pattern["hat8"])
+    if style == 1:
+        hat8 = True
+        shaker = shaker + [0, 4, 8, 12] if shaker else [0, 4, 8, 12]
+    if style == 2:
+        open_hat = (open_hat + [12]) if open_hat else [12]
+        cowbell = []
+    if density >= 1.2:
+        kick = kick + [2, 10]
+        shaker = shaker + [2, 6, 10, 14] if shaker else [2, 6, 10, 14]
+    if density <= 0.6:
+        shaker = shaker[::2]
+        hat8 = hat8 and density > 0.5
+    if density <= 0.35:
+        shaker = []
+        open_hat = []
+
+    for pos in kick:
         track.place(engine.kick(), start + pos * track.bar() / 16, 0.0, g)
-    for pos in pattern["snare"]:
-        track.place(engine.snare(), start + pos * track.bar() / 16, 0.05, g * 0.85)
-    for pos in pattern["clap"]:
-        track.place(engine.clap(), start + pos * track.bar() / 16, 0.05, g * 0.9)
-    if pattern["hat8"]:
+    for pos in snare:
+        track.place(engine.snare(), start + pos * track.bar() / 16, 0.05 * width, g * 0.85)
+    for pos in clap:
+        track.place(engine.clap(), start + pos * track.bar() / 16, 0.05 * width, g * 0.9)
+    if hat8:
         for e in range(8):
             off = (track.bar() / 16) * 0.5
             h = start + e * track.bar() / 8 + off
-            track.place(engine.hat(e == 7), h, -0.3, g * (pattern["hat_gain"] if e % 2 else pattern["hat_gain"] * 1.6))
-    for pos in pattern["open_hat"]:
-        track.place(engine.hat(True), start + pos * track.bar() / 16, -0.3, g)
-    for pos in pattern["shaker"]:
-        track.place(engine.shaker(), start + pos * track.bar() / 16 + track.bar() / 32, 0.35, g)
-    for pos in pattern["cowbell"]:
-        track.place(engine.cowbell(), start + pos * track.bar() / 16, 0.25, g * 0.5)
+            track.place(engine.hat(e == 7), h, -0.3 * width, g * (pattern["hat_gain"] if e % 2 else pattern["hat_gain"] * 1.6))
+    for pos in open_hat:
+        track.place(engine.hat(True), start + pos * track.bar() / 16, -0.3 * width, g)
+    for pos in shaker:
+        track.place(engine.shaker(), start + pos * track.bar() / 16 + track.bar() / 32, 0.35 * width, g)
+    for pos in cowbell:
+        track.place(engine.cowbell(), start + pos * track.bar() / 16, 0.25 * width, g * 0.5)
+    if extra == "roll":
+        _snare_roll(track, bar, g)
+    elif extra == "fill":
+        _tom_fill(track, bar)
 
 
-def _play_bass(track, bar, root_midi, pattern):
+def _snare_roll(track, bar, energy):
+    """Building snare roll across the last half of a bar."""
+    t0 = (bar + 1) * track.bar() - track.bar() / 2
+    for i in range(8):
+        t = t0 + i * (track.bar() / 2 / 8)
+        gain = 0.15 + 0.85 * (i / 7)
+        track.place(engine.snare(), t, 0.0, energy * gain)
+
+
+def _tom_fill(track, bar):
+    """Tom fill on the last beats of a bar (section boundary energy)."""
+    start = (bar + 1) * track.bar() - track.bar() / 2
+    for k, f in enumerate([220, 165, 125, 95]):
+        track.place(engine.tom(f), start + k * 1.5 * track.bar() / 16, 0.0, 0.7)
+
+
+def _play_log(track, bar, energy, density=1.0, width=1.0):
+    """Afrobeat/amapiano log drum accents."""
+    start = bar * track.bar()
+    if energy <= 0:
+        return
+    positions = [2, 6, 10, 14] if density >= 1.0 else [2, 10]
+    for i, pos in enumerate(positions):
+        f = 130 + (i % 3) * 30
+        track.place(engine.tom(f), start + pos * track.bar() / 16, (0.3 - 0.1 * i) * width, 0.5 * energy)
+
+
+def _play_bass(track, bar, root_midi, pattern, timbre="modern"):
     start = bar * track.bar()
     step = track.bar() / 8
     for epos, length in pattern:
         f = midi_to_freq(root_midi)
-        track.place(engine.bass(f, length * 0.5, track.bpm), start + epos * step, 0.0, 1.0)
+        track.place(engine.bass(f, length * 0.5, track.bpm, timbre=timbre), start + epos * step, 0.0, 1.0)
 
 
-def _play_chords(track, bar, root_midi, scale_name, chord_deg, intensity, genre):
+def _play_chords(track, bar, root_midi, scale_name, chord_deg, energy, genre, on, inversion=0, register=0, width=1.0):
     start = bar * track.bar()
     from .scales import chord
-    voicing = chord(root_midi, scale_name, chord_deg, n_notes=3)
+    voicing = chord(root_midi + register, scale_name, chord_deg, n_notes=3)
+    voicing = sorted(voicing)
+    if inversion:
+        voicing = voicing[inversion:] + [m + 12 for m in voicing[:inversion]]
     freqs = [midi_to_freq(m) for m in voicing]
-    if genre["pad"] and intensity > 0:
+    if on.get("pad") and energy > 0:
         track.place(engine.pad(freqs, 4, track.bpm), start, 0.0, genre.get("pad_level", 0.22))
-    if genre["stab"] and intensity >= 0.8:
+    if on.get("stab") and energy >= 0.7:
         for k in range(4):
             t = start + k * track.bar() / 4
             for j, f in enumerate(freqs):
-                track.place(engine.pluck(f, 1.4, track.bpm), t, (j - 1) * 0.15, 0.4)
-    if genre["arp"] and intensity >= 0.6:
+                track.place(engine.pluck(f, 1.4, track.bpm), t, (j - 1) * 0.15 * width, 0.4)
+    if on.get("arp") and energy >= 0.5:
         from .scales import scale_degrees
         pool = scale_degrees(root_midi, scale_name, 0, 1)
         seq = [0, 1, 2, 1, 3, 2, 1, 2, 0, 3, 2, 1, 3, 2, 0, 1]
         for k, idx in enumerate(seq):
             m = pool[min(idx, len(pool) - 1)]
-            track.place(engine.bell(midi_to_freq(m), 0.5, track.bpm), start + k * track.bar() / 16, (k % 2) * 0.4 - 0.2, 0.8)
-    if genre["bell"] and intensity == 0.0 and bar % 2 == 0:
+            track.place(engine.bell(midi_to_freq(m), 0.5, track.bpm), start + k * track.bar() / 16, ((k % 2) * 0.4 - 0.2) * width, 0.8)
+    if on.get("bell") and bar % 2 == 0:
         for k in range(4):
             f = midi_to_freq(freqs[k % len(freqs)])
-            track.place(engine.bell(f * 2, 1, track.bpm), start + k * track.bar() / 4, 0.3, 0.8)
+            track.place(engine.bell(f * 2, 1, track.bpm), start + k * track.bar() / 4, 0.3 * width, 0.8)
 
 
-def _play_melody(track, melody, start_bar, bars, genre, harmony_interval=None, gain=1.0, octave=1):
+def _play_melody(track, melody, start_bar, bars, genre, harmony_interval=None, gain=1.0, octave=1, phase=None):
     if not melody:
         return
     t = start_bar * track.bar()
     end_t = (start_bar + bars) * track.bar()
-    total = sum(b for _, b in melody)
-    idx = 0
+    idx = phase["idx"] if phase else 0
     while t < end_t and melody:
         note, beats = melody[idx % len(melody)]
         if note is not None:
@@ -92,10 +152,39 @@ def _play_melody(track, melody, start_bar, bars, genre, harmony_interval=None, g
                 track.place(engine.lead(hf, beats, track.bpm, octave=octave, timbre=genre["lead_timbre"]), t, 0.2, gain * 0.55)
         t += beats * (60.0 / track.bpm)
         idx += 1
+    if phase:
+        phase["idx"] = idx
+
+
+def _play_transitions(track, sections, bpm):
+    """Risers, reverse sweeps, crashes and boundary fills between sections."""
+    for sec in sections:
+        t = sec["transition"]
+        if t == "riser":
+            bar = sec["start_bar"] - 1
+            if bar >= 0:
+                track.place(engine.riser(4, bpm), bar * track.bar(), 0.0, 0.5)
+        elif t == "reverse":
+            bar = sec["start_bar"] - 1
+            if bar >= 0:
+                r = engine.riser(2, bpm)[::-1]
+                track.place(r, bar * track.bar() + track.bar() - len(r) / engine.SR, 0.0, 0.35)
+        elif t == "crash":
+            track.place(engine.crash(), sec["start_bar"] * track.bar(), 0.0, 0.6)
+        elif t == "fill":
+            bar = sec["start_bar"] - 1
+            if bar >= 0:
+                _tom_fill(track, bar)
+
+
+def song_sections(duration_s, bpm, genre_name, seed=None):
+    """Sections for a given duration/tempo (shared by arrangement + vocals)."""
+    n_bars = max(16, int(round(duration_s / (4 * 60.0 / bpm))))
+    return build_sections(n_bars, bpm, genre_name, seed=seed)
 
 
 def generate_track(genre_name, bpm, root_midi, scale_name, duration_s, melody=None, seed=None, mode="song"):
-    """Build the full track. Returns (L, R, meta)."""
+    """Build the full track using the section-based arrangement. Returns (L, R)."""
     genre = GENRES[genre_name]
     if bpm is None:
         bpm = genre["bpm"]
@@ -105,57 +194,39 @@ def generate_track(genre_name, bpm, root_midi, scale_name, duration_s, melody=No
     total_s = n_bars * 4 * 60.0 / bpm + 0.5
     track = engine.Track(total_s, bpm)
 
-    intro_end = min(4, n_bars // 6)
-    build_end = intro_end + min(4, n_bars // 6)
-    breakdown = None
-    if n_bars >= 24:
-        bd_start = int(n_bars * 0.62)
-        breakdown = (bd_start, min(bd_start + 4, n_bars - 4))
-    main_end = breakdown[0] if breakdown else n_bars - 2
-    outro_start = n_bars - 2
-
+    sections = build_sections(n_bars, bpm, genre_name, seed=seed)
     chord_prog = genre["chords"]
-    bass_pattern = BASS_PATTERNS[genre_name]
-
     if melody is None:
         melody = random_melody(root_midi, scale_name, 16, bpm, seed=seed)
 
-    for bar in range(n_bars):
-        chord_deg = chord_prog[bar % len(chord_prog)]
-        intensity = _intensity_for(bar, n_bars, intro_end, build_end, breakdown)
-        if bar >= outro_start:
-            intensity = min(intensity, 0.5)
+    melody_phase = {"idx": 0}
+    for sec in sections:
+        v = sec["variation"]
+        for bar in range(sec["start_bar"], sec["end_bar"]):
+            energy = sec["energy"]
+            chord_deg = chord_prog[bar % len(chord_prog)]
+            _play_chords(track, bar, root_midi, scale_name, chord_deg, energy, genre,
+                         on=v["layering"], inversion=v["chord_inversion"],
+                         register=v["register"], width=v["width"])
+            if v["bass"] is not None and energy > 0:
+                _play_bass(track, bar, root_midi - 12, _bass_variant(genre_name, v["bass"]),
+                           timbre=genre["bass_timbre"])
+            if v["bass"] is not None and energy > 0.2:
+                _play_drums(track, bar, DRUM_PATTERNS[genre_name], energy,
+                            density=v["density"], width=v["width"], style=v["drum_style"], extra=v["extra"])
+            if genre.get("log") and energy >= 0.6:
+                _play_log(track, bar, energy * 0.8, density=v["density"], width=v["width"])
+            if v["layering"].get("lead") and melody and energy > 0.2:
+                _play_melody(track, melody, bar, 1, genre,
+                             harmony_interval=(-3 if genre["scale"] == "minor" else 3) if energy >= 0.95 else None,
+                             gain=1.0 if energy < 1.0 else 1.05,
+                             octave=v["melody_octave"], phase=melody_phase)
 
-        _play_chords(track, bar, root_midi, scale_name, chord_deg, intensity, genre)
-
-        if intensity > 0:
-            _play_bass(track, bar, root_midi - 12, bass_pattern)
-            _play_drums(track, bar, DRUM_PATTERNS[genre_name], intensity)
-
-        # tom fill before drop
-        if breakdown and bar == breakdown[0] - 1:
-            start = bar * track.bar()
-            for k, f in enumerate([220, 165, 125, 95]):
-                track.place(engine.tom(f), start + (12 + k * 1.5) * track.bar() / 16, 0.0, 0.8)
-
-        if bar < intro_end:
-            pass
-
-        # melody in main + drop sections
-        if build_end <= bar < main_end and (not breakdown or not (breakdown[0] <= bar < breakdown[1])):
-            _play_melody(track, melody, bar, 1, genre,
-                         harmony_interval=(-3 if genre["scale"] == "minor" else 3) if intensity >= 0.9 else None,
-                         gain=1.0 if intensity < 1.0 else 1.05)
-
-    # risers into build/drop
-    for bar in (build_end - 1, breakdown[0] - 1 if breakdown else -1):
-        if 0 <= bar < n_bars:
-            track.place(engine.riser(4, bpm), bar * track.bar(), 0.0, 0.5)
-
-    return _mix(track, bpm, genre_name, root_midi, scale_name, seed)
+    _play_transitions(track, sections, bpm)
+    return _mix(track, bpm, genre_name, root_midi, scale_name, seed, sections)
 
 
-def _mix(track, bpm, genre_name, root_midi, scale_name, seed):
+def _mix(track, bpm, genre_name, root_midi, scale_name, seed, sections=None):
     L, R = track.L.copy(), track.R.copy()
 
     # stereo delay on the lead region only (keep from bar 8 onward)
@@ -172,10 +243,18 @@ def _mix(track, bpm, genre_name, root_midi, scale_name, seed):
     L = L + delL
     R = R + delR
 
-    wetL = engine.fft_reverb(L, 7)
-    wetR = engine.fft_reverb(R, 9)
-    L = L + wetL * 0.3
-    R = R + wetR * 0.3
+    # section-scaled reverb (quieter/underexposed sections get dryer, builds wetter)
+    for sec in sections or []:
+        s = int(sec["start_bar"] * 4 * 60.0 / bpm * engine.SR)
+        e = int(sec["end_bar"] * 4 * 60.0 / bpm * engine.SR)
+        e = min(e, track.n)
+        if e <= s:
+            continue
+        wetL = engine.fft_reverb(L[s:e], 7)
+        wetR = engine.fft_reverb(R[s:e], 9)
+        blend = 0.18 + 0.22 * sec["energy"]
+        L[s:e] = L[s:e] + wetL * blend
+        R[s:e] = R[s:e] + wetR * blend
 
     # sidechain on kick beats from bar 8 onward
     duck_pos = []
@@ -253,21 +332,46 @@ def generate_from_prompt(prompt, duration_s=40.0, seed=None):
     L, R = generate_track(genre_name, bpm, root_midi, scale_name, duration_s, melody=melody, seed=seed)
     meta = _meta(genre_name, bpm, root_midi, scale_name, duration_s, seed, "prompt")
     meta["prompt"] = prompt
+    meta["spec"] = _spec(prompt, genre_name, bpm, root_midi, scale_name, duration_s, seed)
     return L, R, meta
 
 
-def generate_from_lyrics(lyrics, duration_s=40.0, genre_name=None, seed=None):
+def generate_from_lyrics(lyrics, duration_s=40.0, genre_name=None, seed=None, vocal_style="none", voice=None):
     mood = lyrics_mood(lyrics)
     if genre_name is None:
         genre_name = _find_genre(lyrics)
     root_midi = 60 + 4  # E by default for a singable register
     scale_name = GENRES[genre_name]["scale"]
     melody = lyrics_to_melody(lyrics, root_midi, scale_name, seed=seed)
+    lines = lyrics_to_lines_melody(lyrics, root_midi, scale_name, seed=seed)
     bpm = GENRES[genre_name]["bpm"]
     L, R = generate_track(genre_name, bpm, root_midi, scale_name, duration_s, melody=melody, seed=seed)
     meta = _meta(genre_name, bpm, root_midi, scale_name, duration_s, seed, "lyrics")
     meta["lyrics"] = lyrics[:500]
     meta["detected_mood"] = mood
+    meta["vocal_style"] = vocal_style or "none"
+    meta["vocals"] = False
+    meta["spec"] = _spec(lyrics, genre_name, bpm, root_midi, scale_name, duration_s, seed)
+    if vocal_style in ("singing", "spoken"):
+        from . import vocals
+
+        voice = voice or vocals.DEFAULT_VOICE
+        meta["voice"] = voice
+        sections = song_sections(duration_s, bpm, genre_name, seed=seed)
+        vocal_bar = vocal_start_bar(sections)
+        try:
+            if vocal_style == "singing":
+                vocal = vocals.render_singing(lines, voice, bpm=bpm, seed=seed)
+            else:
+                vocal = vocals.render_spoken(lines, voice, bpm=bpm)
+            if vocal is not None:
+                start_s = vocal_bar * (4 * 60.0 / bpm)
+                L, R = vocals.mix_vocals(L, R, vocal, start_s=start_s)
+                meta["vocals"] = True
+            else:
+                meta["vocals_error"] = "Voice synthesis unavailable (network required)."
+        except Exception as exc:  # never let vocals break generation
+            meta["vocals_error"] = str(exc)
     return L, R, meta
 
 
@@ -281,6 +385,7 @@ def generate_from_recording(analysis, duration_s=40.0, genre_name=None, seed=Non
     L, R = generate_track(genre_name, bpm, root_midi, scale_name, duration_s, melody=melody, seed=seed)
     meta = _meta(genre_name, bpm, root_midi, scale_name, duration_s, seed, "recording")
     meta["recording_analysis"] = analysis
+    meta["spec"] = _spec("recording", genre_name, bpm, root_midi, scale_name, duration_s, seed)
     return L, R, meta
 
 
@@ -295,4 +400,41 @@ def _meta(genre_name, bpm, root_midi, scale_name, duration_s, seed, mode):
         "scale": scale_name,
         "duration_s": duration_s,
         "seed": seed,
+    }
+
+
+def _spec(source, genre_name, bpm, root_midi, scale_name, duration_s, seed):
+    """HYDAN-style structured spec: sections timeline, instrumentation, mix/master notes."""
+    genre = GENRES[genre_name]
+    sections = build_sections(max(16, int(round(duration_s / (4 * 60.0 / bpm)))), bpm, genre_name, seed=seed)
+    out = []
+    for sec in sections:
+        times = section_times(sections, bpm)
+        label = variation_label(sec["variation"])
+        out.append({
+            "name": sec["name"],
+            "duration": f"{sec['start_bar'] * 4 * 60.0 / bpm:.1f}-{sec['end_bar'] * 4 * 60.0 / bpm:.1f}s",
+            "bars": f"{sec['start_bar'] + 1}-{sec['end_bar']}",
+            "instruments": genre.get("instruments", [])[:2] + (["drums"] if sec["energy"] >= 0.6 else []),
+            "variation": label,
+            "vocal_style": sec["vocal_style"],
+            "energy": round(sec["energy"], 2),
+        })
+    return {
+        "title": source.strip()[:80].splitlines()[0] if source else "Untitled",
+        "genre": genre_name,
+        "genre_name": genre["name"],
+        "bpm": bpm,
+        "key": midi_to_name(root_midi, octave=False),
+        "scale": scale_name,
+        "mood": (lyrics_mood(source) or "neutral") if source else "neutral",
+        "sections": out,
+        "lyrics": source[:500] if source else "",
+        "mix_notes": genre.get("mix", []),
+        "mastering_notes": genre.get("master", []),
+        "vocal_guidance": {
+            "lead": "Lead vocal melody follows the composed melody phrase (phase-continuous).",
+            "backing": "Backing harmonies double the lead a minor/perfect third higher in choruses.",
+            "ad_libs": "Ad-libs sit on the last 2 bars of each Chorus and Final Chorus.",
+        },
     }

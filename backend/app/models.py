@@ -14,6 +14,15 @@ class LyricsRequest(BaseModel):
     lyrics: str = Field(..., min_length=3, max_length=5000)
     duration_s: float = Field(40.0, ge=10, le=600)
     genre: Optional[str] = None
+    vocal_style: Optional[str] = Field("none", pattern="^(none|singing|spoken)$")
+    voice: Optional[str] = None
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    voice: Optional[str] = None
+    rate: Optional[str] = None
+    pitch: Optional[str] = None
 
 
 class GenerateResponse(BaseModel):

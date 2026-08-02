@@ -100,6 +100,23 @@ label.field-label {
   margin: 16px 0 6px;
 }
 
+.row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.row .col {
+  flex: 1;
+  min-width: 180px;
+}
+.dl-link {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0ea5e9;
+}
+
 input[type="text"],
 textarea,
 select {
@@ -230,6 +247,54 @@ textarea {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+}
+.structure {
+  margin-top: 14px;
+  background: #0b1424;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.structure h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.section-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.section-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #16233a;
+  font-size: 12px;
+}
+.section-row:last-child {
+  border-bottom: none;
+}
+.section-name {
+  flex: 0 0 110px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.section-time {
+  flex: 0 0 110px;
+  color: #7dd3fc;
+  font-variant-numeric: tabular-nums;
+}
+.section-vocals {
+  flex: 0 0 130px;
+  color: #c4b5fd;
+}
+.section-variation {
+  flex: 1;
+  color: #94a3b8;
 }
 audio {
   width: 100%;

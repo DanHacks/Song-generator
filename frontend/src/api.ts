@@ -21,6 +21,27 @@ export interface TrackMeta {
   };
   filename?: string;
   created_at?: string;
+  vocals?: boolean;
+  vocal_style?: string;
+  voice?: string;
+  spec?: {
+    title?: string;
+    bpm?: number;
+    key?: string;
+    mood?: string;
+    sections?: Array<{
+      name: string;
+      duration: string;
+      bars: string;
+      instruments: string[];
+      variation: string;
+      vocal_style: string;
+      energy?: number;
+    }>;
+    mix_notes?: string[];
+    mastering_notes?: string[];
+    vocal_guidance?: Record<string, string>;
+  };
 }
 
 export interface Track {
@@ -94,10 +115,40 @@ export function generatePrompt(prompt: string, duration: number) {
   });
 }
 
-export function generateLyrics(lyrics: string, duration: number, genre: string) {
+export function generateLyrics(
+  lyrics: string,
+  duration: number,
+  genre: string,
+  vocalStyle = "none",
+  voice = "",
+) {
   return api("/api/generate/lyrics", {
     method: "POST",
-    body: JSON.stringify({ lyrics, duration_s: duration, genre: genre || null }),
+    body: JSON.stringify({
+      lyrics,
+      duration_s: duration,
+      genre: genre || null,
+      vocal_style: vocalStyle,
+      voice: voice || null,
+    }),
+  });
+}
+
+export const VOICES = [
+  "en-KE-AsiliaNeural",
+  "en-NG-EzinneNeural",
+  "en-TZ-ImaniNeural",
+  "en-ZA-LeahNeural",
+  "en-IN-NeerjaNeural",
+  "en-US-EmmaNeural",
+  "en-US-JennyNeural",
+  "en-GB-SoniaNeural",
+];
+
+export function generateTTS(text: string, voice: string, rate = "+0%") {
+  return api<{ id: string; audio_url: string; meta: Record<string, unknown> }>("/api/tts", {
+    method: "POST",
+    body: JSON.stringify({ text, voice, rate }),
   });
 }
 

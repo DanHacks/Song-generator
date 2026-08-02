@@ -98,6 +98,10 @@ GENRES = {
         "bell": True,
         "lead_timbre": "warm",
         "moods": ["energy", "happy", "dance", "party", "africa", "joy"],
+        "log": True,
+        "instruments": ["log drum", "shaker percussion", "rhythmic bass guitar", "warm electric piano", "melodic lead synth", "backing chants"],
+        "mix": ["Sidechain the kick to keep the log drum pocket tight", "Center the bass, wide the shaker bed", "Automate a low-pass filter between verses"],
+        "master": ["Punchy 0 dBFS ceiling, -14 LUFS for streaming", "Tame 2-4 kHz to keep the electric piano sweet"],
     },
     "gospel": {
         "name": "Gospel",
@@ -111,6 +115,10 @@ GENRES = {
         "bell": True,
         "lead_timbre": "warm",
         "moods": ["worship", "praise", "prayer", "church", "faith", "hope", "god"],
+        "log": False,
+        "instruments": ["soaring organ", "choir pads", "hand claps", "rhythmic bass", "expressive lead vocals"],
+        "mix": ["Reverb heavy on the choir pads", "Catch the clap transients without pushing them", "Wide stereo on the climax"],
+        "master": ["Warm, soft-clipped master", "Moderate density to let the choir breathe"],
     },
     "hiphop": {
         "name": "Hip Hop",
@@ -124,6 +132,10 @@ GENRES = {
         "bell": False,
         "lead_timbre": "bright",
         "moods": ["rap", "street", "grind", "hustle", "trap", "city"],
+        "log": False,
+        "instruments": ["808 bass", "tight hi-hats", "snare rolls", "dark pads", "plucked synth melody", "reverse effects"],
+        "mix": ["Duck the 808 under the kick", "Layer hi-hat rolls into the build", "Add reverse tails before section drops"],
+        "master": ["Heavy low end, -8 LUFS competitive loudness", "Keep vocals clear above the 808"],
     },
     "amapiano": {
         "name": "Amapiano",
@@ -137,6 +149,10 @@ GENRES = {
         "bell": True,
         "lead_timbre": "bright",
         "moods": ["piano", "south africa", "log drum", "vibe", "chill"],
+        "log": True,
+        "instruments": ["deep log bass", "atmospheric pads", "piano stabs", "percussive groove", "vocal chops", "filtered transitions"],
+        "mix": ["Log drums in the 120-180 Hz range with a soft attack", "Filter the pads for the intro and bridge", "Rhythmic sidechain on the groove"],
+        "master": ["Spacious, -13 LUFS", "Low end focused but controlled"],
     },
     "ballad": {
         "name": "Ballad",
@@ -150,6 +166,10 @@ GENRES = {
         "bell": True,
         "lead_timbre": "warm",
         "moods": ["love", "sad", "romantic", "slow", "emotional", "acoustic"],
+        "log": False,
+        "instruments": ["warm piano", "acoustic guitar", "soft strings", "gentle bass", "expressive lead vocals"],
+        "mix": ["Long reverb on the piano", "Let the strings swell in the bridge", "Automate warmth as the song grows"],
+        "master": ["Dynamic, untouched peaks", "-16 LUFS acoustic-friendly loudness"],
     },
     "edm": {
         "name": "EDM",
@@ -163,6 +183,10 @@ GENRES = {
         "bell": True,
         "lead_timbre": "bright",
         "moods": ["dance", "party", "electronic", "club", "drop", "festival"],
+        "log": False,
+        "instruments": ["layered synths", "punchy kick", "risers", "arpeggios", "cinematic pads"],
+        "mix": ["Sidechain everything to the four-on-the-floor kick", "Build risers into every drop", "Airy top-end hats for energy"],
+        "master": ["Loud -7 LUFS club master", "Clean sub below 40 Hz"],
     },
     "dancehall": {
         "name": "Dancehall",
@@ -176,6 +200,10 @@ GENRES = {
         "bell": False,
         "lead_timbre": "bright",
         "moods": ["jamaica", "riddim", "island", "reggae", "summer"],
+        "log": True,
+        "instruments": ["riddim bass", "island percussion", "staccato keys", "melodic lead"],
+        "mix": ["Loose swing on the shaker", "Staccato keys doubled with the riddim bass", "Sunny reverb on the lead"],
+        "master": ["Warm and wide, -13 LUFS", "Bounce in the 100-200 Hz region"],
     },
 }
 
