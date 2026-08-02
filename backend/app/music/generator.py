@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from . import engine
+from . import engine, samples
 from .genres import GENRES, GENRE_ALIASES, TEMPO_WORDS, BASS_PATTERNS, DRUM_PATTERNS
 from .scales import name_to_midi, parse_key, scale_degrees, midi_to_freq, midi_to_name
 from .melody import lyrics_to_melody, lyrics_to_lines_melody, random_melody, lyrics_mood, _seed_for
@@ -22,10 +22,30 @@ def _bass_variant(genre_name, variant):
     return base
 
 
-def _play_drums(track, bar, pattern, energy, density=1.0, width=1.0, style=0, extra=None):
+def _hit(synth_fn, category, vel, seed=0):
+    """Sample-first drum hit; falls back to the synth engine when no sample."""
+    from . import samples
+    hit = samples.drum(category, velocity=vel, seed=seed)
+    if hit is not None:
+        return hit
+    return synth_fn()
+
+
+def _place_hit(track, sig, t_s, rng, pan, gain, humanize=True):
+    from . import samples
+    if humanize:
+        t_s = samples.timing_jitter(t_s, rng)
+    track.place(sig, t_s, pan, gain)
+
+
+def _play_drums(track, bar, pattern, energy, density=1.0, width=1.0, style=0, extra=None,
+                humanize=True, swing=0.0, rng=None):
+    from . import samples
     start = bar * track.bar()
     if energy <= 0 or not pattern:
         return
+    if rng is None:
+        rng = np.random.default_rng(bar)
     g = min(energy, 1.15)
     kick = list(pattern["kick"])
     snare = list(pattern["snare"])
@@ -50,65 +70,96 @@ def _play_drums(track, bar, pattern, energy, density=1.0, width=1.0, style=0, ex
         shaker = []
         open_hat = []
 
+    def _at(pos):
+        return start + pos * track.bar() / 16 + samples.swing_time(pos / 16.0, swing) * track.bar()
+
     for pos in kick:
-        track.place(engine.kick(), start + pos * track.bar() / 16, 0.0, g)
+        vel = samples.velocity_jitter(g, rng) if humanize else g
+        _place_hit(track, _hit(engine.kick, "kick", vel), _at(pos), rng, 0.0, vel, humanize)
     for pos in snare:
-        track.place(engine.snare(), start + pos * track.bar() / 16, 0.05 * width, g * 0.85)
+        vel = samples.velocity_jitter(g * 0.85, rng) if humanize else g * 0.85
+        _place_hit(track, _hit(engine.snare, "snare", vel), _at(pos), rng, 0.05 * width, vel, humanize)
     for pos in clap:
-        track.place(engine.clap(), start + pos * track.bar() / 16, 0.05 * width, g * 0.9)
+        vel = samples.velocity_jitter(g * 0.9, rng) if humanize else g * 0.9
+        _place_hit(track, _hit(engine.clap, "clap", vel), _at(pos), rng, 0.05 * width, vel, humanize)
     if hat8:
         for e in range(8):
             off = (track.bar() / 16) * 0.5
             h = start + e * track.bar() / 8 + off
-            track.place(engine.hat(e == 7), h, -0.3 * width, g * (pattern["hat_gain"] if e % 2 else pattern["hat_gain"] * 1.6))
+            vel = samples.velocity_jitter(g * (pattern["hat_gain"] if e % 2 else pattern["hat_gain"] * 1.6), rng) if humanize else g * (pattern["hat_gain"] if e % 2 else pattern["hat_gain"] * 1.6)
+            _place_hit(track, _hit(lambda: engine.hat(e == 7), "openhat" if e == 7 else "hat", vel), h, rng, -0.3 * width, vel, humanize)
     for pos in open_hat:
-        track.place(engine.hat(True), start + pos * track.bar() / 16, -0.3 * width, g)
+        vel = samples.velocity_jitter(g, rng) if humanize else g
+        _place_hit(track, _hit(lambda: engine.hat(True), "openhat", vel), _at(pos), rng, -0.3 * width, vel, humanize)
     for pos in shaker:
-        track.place(engine.shaker(), start + pos * track.bar() / 16 + track.bar() / 32, 0.35 * width, g)
+        vel = samples.velocity_jitter(g, rng) if humanize else g
+        _place_hit(track, _hit(engine.shaker, "shaker", vel), _at(pos) + track.bar() / 32, rng, 0.35 * width, vel, humanize)
     for pos in cowbell:
-        track.place(engine.cowbell(), start + pos * track.bar() / 16, 0.25 * width, g * 0.5)
+        vel = samples.velocity_jitter(g * 0.5, rng) if humanize else g * 0.5
+        _place_hit(track, _hit(engine.cowbell, "cowbell", vel), _at(pos), rng, 0.25 * width, vel, humanize)
     if extra == "roll":
         _snare_roll(track, bar, g)
     elif extra == "fill":
         _tom_fill(track, bar)
 
 
-def _snare_roll(track, bar, energy):
+def _snare_roll(track, bar, energy, rng=None):
     """Building snare roll across the last half of a bar."""
+    if rng is None:
+        rng = np.random.default_rng(bar + 1)
     t0 = (bar + 1) * track.bar() - track.bar() / 2
     for i in range(8):
         t = t0 + i * (track.bar() / 2 / 8)
         gain = 0.15 + 0.85 * (i / 7)
-        track.place(engine.snare(), t, 0.0, energy * gain)
+        sig = _hit(engine.snare, "snare", energy * gain)
+        track.place(sig, samples.timing_jitter(t, rng), 0.0, energy * gain)
 
 
-def _tom_fill(track, bar):
+def _tom_fill(track, bar, rng=None):
     """Tom fill on the last beats of a bar (section boundary energy)."""
+    if rng is None:
+        rng = np.random.default_rng(bar + 2)
     start = (bar + 1) * track.bar() - track.bar() / 2
     for k, f in enumerate([220, 165, 125, 95]):
-        track.place(engine.tom(f), start + k * 1.5 * track.bar() / 16, 0.0, 0.7)
+        sig = _hit(lambda: engine.tom(f), "tom", 0.7)
+        track.place(sig, samples.timing_jitter(start + k * 1.5 * track.bar() / 16, rng), 0.0, 0.7)
 
 
-def _play_log(track, bar, energy, density=1.0, width=1.0):
+def _play_log(track, bar, energy, density=1.0, width=1.0, rng=None):
     """Afrobeat/amapiano log drum accents."""
+    from . import samples
+    if rng is None:
+        rng = np.random.default_rng(bar + 3)
     start = bar * track.bar()
     if energy <= 0:
         return
     positions = [2, 6, 10, 14] if density >= 1.0 else [2, 10]
     for i, pos in enumerate(positions):
         f = 130 + (i % 3) * 30
-        track.place(engine.tom(f), start + pos * track.bar() / 16, (0.3 - 0.1 * i) * width, 0.5 * energy)
+        sig = _hit(lambda: engine.tom(f), "tom", 0.5 * energy)
+        track.place(sig, samples.timing_jitter(start + pos * track.bar() / 16, rng), (0.3 - 0.1 * i) * width, 0.5 * energy)
 
 
-def _play_bass(track, bar, root_midi, pattern, timbre="modern"):
+def _play_bass(track, bar, root_midi, pattern, timbre="modern", rng=None):
+    from . import samples
     start = bar * track.bar()
     step = track.bar() / 8
+    if rng is None:
+        rng = np.random.default_rng(bar + 4)
     for epos, length in pattern:
         f = midi_to_freq(root_midi)
-        track.place(engine.bass(f, length * 0.5, track.bpm, timbre=timbre), start + epos * step, 0.0, 1.0)
+        # sample-first bass (note-pitched), synth fallback
+        note = samples.note_audio("bass", root_midi, velocity=1.0)
+        if note is not None:
+            track.place(note, start + epos * step + samples.swing_time(epos / 8.0, 0.2) * step, 0.0, 1.0)
+        else:
+            track.place(engine.bass(f, length * 0.5, track.bpm, timbre=timbre), start + epos * step, 0.0, 1.0)
 
 
-def _play_chords(track, bar, root_midi, scale_name, chord_deg, energy, genre, on, inversion=0, register=0, width=1.0):
+def _play_chords(track, bar, root_midi, scale_name, chord_deg, energy, genre, on, inversion=0, register=0, width=1.0, rng=None):
+    from . import samples
+    if rng is None:
+        rng = np.random.default_rng(bar + 5)
     start = bar * track.bar()
     from .scales import chord
     voicing = chord(root_midi + register, scale_name, chord_deg, n_notes=3)
@@ -121,15 +172,23 @@ def _play_chords(track, bar, root_midi, scale_name, chord_deg, energy, genre, on
     if on.get("stab") and energy >= 0.7:
         for k in range(4):
             t = start + k * track.bar() / 4
-            for j, f in enumerate(freqs):
-                track.place(engine.pluck(f, 1.4, track.bpm), t, (j - 1) * 0.15 * width, 0.4)
+            for j, m in enumerate(voicing):
+                note = samples.note_audio("keys", m, velocity=0.4)
+                if note is not None:
+                    track.place(note, samples.timing_jitter(t, rng), (j - 1) * 0.15 * width, 0.4)
+                else:
+                    track.place(engine.pluck(freqs[j], 1.4, track.bpm), t, (j - 1) * 0.15 * width, 0.4)
     if on.get("arp") and energy >= 0.5:
         from .scales import scale_degrees
         pool = scale_degrees(root_midi, scale_name, 0, 1)
         seq = [0, 1, 2, 1, 3, 2, 1, 2, 0, 3, 2, 1, 3, 2, 0, 1]
         for k, idx in enumerate(seq):
             m = pool[min(idx, len(pool) - 1)]
-            track.place(engine.bell(midi_to_freq(m), 0.5, track.bpm), start + k * track.bar() / 16, ((k % 2) * 0.4 - 0.2) * width, 0.8)
+            note = samples.note_audio("keys", m, velocity=0.8)
+            if note is not None:
+                track.place(note, start + k * track.bar() / 16, ((k % 2) * 0.4 - 0.2) * width, 0.8)
+            else:
+                track.place(engine.bell(midi_to_freq(m), 0.5, track.bpm), start + k * track.bar() / 16, ((k % 2) * 0.4 - 0.2) * width, 0.8)
     if on.get("bell") and bar % 2 == 0:
         for k in range(4):
             f = midi_to_freq(freqs[k % len(freqs)])

@@ -25,6 +25,8 @@ from app.models import (
 from app.music import engine
 from app.music.generator import generate_from_prompt, generate_from_lyrics, generate_from_recording
 from app.music.analysis import analyze_recording
+from app.music.provider import get_provider, MusicGenUnavailable
+from app.music.director import direct
 from app.config import assert_quota, TIERS
 
 app = FastAPI(title="SongForge", version="0.1.0")
@@ -50,7 +52,9 @@ def _client(authorization: str | None, header_value: str | None):
 
 
 def _render_and_store(client_id, L, R, meta):
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+    # Write in DATA_DIR so os.replace() stays on the same filesystem (avoids
+    # cross-device link errors when /tmp is a separate mount, e.g. on AWS).
+    with tempfile.NamedTemporaryFile(suffix=".wav", dir=storage.DATA_DIR, delete=False) as f:
         tmp = f.name
     engine.write_wav(tmp, L, R)
     track_id, final, meta = storage.save_track(client_id, tmp, meta)
@@ -71,6 +75,22 @@ def tiers():
 def plans():
     from app.config import TIERS
     return {"plans": TIERS, "providers": billing.providers_status()}
+
+
+@app.get("/api/engine")
+def engine_status():
+    """Which generation engine is active (musicgen primary, samples fallback)."""
+    from app.music.provider import get_provider, MusicGenUnavailable
+    try:
+        p = get_provider()
+    except MusicGenUnavailable:
+        p = None
+    return {
+        "engine": p.name if p else "samples",
+        "device": getattr(p, "device", None),
+        "model": getattr(p, "model_name", None),
+        "capabilities": p.capabilities if p else {},
+    }
 
 
 @app.post("/api/auth/signup")
@@ -199,11 +219,52 @@ def delete(track_id: str, authorization: str | None = Header(default=None), x_cl
     return {"deleted": True}
 
 
+def _generate_with_fallback(fn, prompt, req, settings=None):
+    """Run the primary engine, falling back to the hybrid sample engine.
+
+    MusicGen is primary; if it is unavailable or fails, the sample+synth engine
+    (already wired into generator.py) is used so generation never breaks.
+    """
+    settings = settings or {}
+    try:
+        provider = get_provider()
+        if provider.name == "musicgen":
+            # expand the prompt through SongDirector for a rich condition
+            expanded = direct(prompt, duration_s=req.duration_s,
+                              overrides={"genre": settings.get("genre")})
+            mg_prompt = expanded["prompt_mg"]
+            meta = {
+                "mode": settings.get("mode", "prompt"),
+                "director": expanded["spec"],
+            }
+            L, R, meta = provider.generate(mg_prompt, {
+                "duration_s": req.duration_s,
+                "mode": settings.get("mode", "prompt"),
+                "_meta": meta,
+                **(settings or {}),
+            })
+            return L, R, meta
+    except MusicGenUnavailable:
+        pass
+    except Exception as exc:
+        print("[warn] MusicGen generation failed, falling back: %s" % exc)
+    return fn(req)
+
+
+@app.post("/api/direct")
+def direct_endpoint(req: PromptRequest):
+    """Expand a prompt into a full SongDirector production brief (no audio)."""
+    return direct(req.prompt, duration_s=req.duration_s)
+
+
 @app.post("/api/generate/prompt", response_model=GenerateResponse)
 def gen_prompt(req: PromptRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
     cid = _client(authorization, x_client_id)
     assert_quota(cid)
-    L, R, meta = generate_from_prompt(req.prompt, duration_s=req.duration_s)
+    L, R, meta = _generate_with_fallback(
+        lambda r: generate_from_prompt(r.prompt, duration_s=r.duration_s),
+        req.prompt, req, settings={"mode": "prompt", "genre": req.genre},
+    )
     track_id, _, meta = _render_and_store(cid, L, R, meta)
     return GenerateResponse(id=track_id, audio_url="/data/%s/%s" % (cid, meta["filename"]), meta=meta)
 
@@ -212,10 +273,17 @@ def gen_prompt(req: PromptRequest, authorization: str | None = Header(default=No
 def gen_lyrics(req: LyricsRequest, authorization: str | None = Header(default=None), x_client_id: str | None = Header(default=None)):
     cid = _client(authorization, x_client_id)
     assert_quota(cid)
-    L, R, meta = generate_from_lyrics(
-        req.lyrics, duration_s=req.duration_s, genre_name=req.genre,
-        vocal_style=req.vocal_style or "none", voice=req.voice,
-    )
+    if req.vocal_style in ("singing", "spoken"):
+        # vocals pipeline lives in the hybrid engine
+        L, R, meta = generate_from_lyrics(
+            req.lyrics, duration_s=req.duration_s, genre_name=req.genre,
+            vocal_style=req.vocal_style or "none", voice=req.voice,
+        )
+    else:
+        L, R, meta = _generate_with_fallback(
+            lambda r: generate_from_lyrics(r.lyrics, duration_s=r.duration_s, genre_name=r.genre),
+            req.lyrics, req, settings={"mode": "lyrics"},
+        )
     track_id, _, meta = _render_and_store(cid, L, R, meta)
     return GenerateResponse(id=track_id, audio_url="/data/%s/%s" % (cid, meta["filename"]), meta=meta)
 
@@ -232,7 +300,9 @@ def gen_tts(req: TTSRequest, authorization: str | None = Header(default=None), x
     import wave
 
     import numpy as np
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+    # Write in DATA_DIR so storage.save_tts()'s os.replace() stays on the same
+    # filesystem (avoids cross-device link errors on AWS/tmpfs).
+    with tempfile.NamedTemporaryFile(suffix=".wav", dir=storage.DATA_DIR, delete=False) as f:
         tmp = f.name
     try:
         with wave.open(tmp, "wb") as f:

@@ -2,7 +2,7 @@
 
 Generate songs and instrumentals from a **prompt**, **uploaded lyrics**, or your **own recorded voice** — with **real neural-voice vocals** and a natural **text-to-speech** studio.
 
-Built with a fully procedural audio synthesis engine (no paid AI APIs, no sample packs, works offline). Sauti means "voice/sound" in Swahili. Real vocals use Microsoft Edge's free neural voices (edge-tts) + DSP (YIN pitch detection, phase-vocoder time-stretch/pitch-shift).
+Built with a **hybrid generation stack**: Meta's **MusicGen** (transformer-based, real audio from text) is the primary engine, with a fully procedural NumPy synthesis + royalty-free sample engine as an offline CPU fallback (no paid AI APIs). Sauti means "voice/sound" in Swahili. Real vocals use Microsoft Edge's free neural voices (edge-tts) + DSP (YIN pitch detection, phase-vocoder time-stretch/pitch-shift).
 
 ## Features
 
@@ -27,8 +27,22 @@ Built with a fully procedural audio synthesis engine (no paid AI APIs, no sample
 | --- | --- |
 | Backend | FastAPI, NumPy |
 | Frontend | React + TypeScript + Vite |
-| Audio | Pure NumPy DSP (oscillators, envelopes, filters, drums, effects) |
+| Audio (primary) | MusicGen (`transformers`, 32kHz → 44.1kHz upmix) |
+| Audio (fallback) | NumPy DSP + royalty-free samples (drums/bass/keys) |
+| Vocals | Edge-TTS neural voices (singing + spoken + plain TTS) |
 | Storage | Local filesystem (WAV + JSON metadata) |
+
+## Generation engines
+
+`GET /api/engine` reports which engine is active.
+
+- **musicgen** (primary): `facebook/musicgen-small` text-to-audio via `transformers`.
+  Set `SONGFORGE_MUSICGEN_MODEL` for `facebook/musicgen-medium`/`large` and
+  `SONGFORGE_DEVICE=cuda` on GPU hosts. First load downloads ~1.5GB into the HF
+  cache; generation runs ~24x realtime on a 4-core CPU, much faster on GPU.
+- **samples** (fallback): hybrid NumPy synth + real one-shots from
+  `assets/samples/` (see `scripts/fetch_samples.sh`). Always available offline.
+  Falls back automatically if MusicGen or its deps are missing.
 
 ## Architecture
 

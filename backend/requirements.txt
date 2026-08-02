@@ -3,3 +3,12 @@ uvicorn[standard]==0.34.0
 numpy==2.2.1
 python-multipart==0.0.20
 pydantic==2.10.4
+edge-tts==7.2.8
+
+# MusicGen (Phase 1). torch is CPU by default; install GPU wheels on AWS.
+# pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+torch>=2.4
+torchaudio>=2.4
+transformers>=4.46
+accelerate>=0.34
+scipy>=1.13

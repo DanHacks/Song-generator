@@ -9,6 +9,13 @@ import uuid
 DATA_DIR = os.environ.get("SONGFORGE_DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
 
 
+def _ensure_data_dir():
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+
+_ensure_data_dir()
+
+
 def _safe_name(text, max_len=40):
     text = re.sub(r"[^a-zA-Z0-9 _-]", "", text).strip()
     text = re.sub(r"\s+", "_", text)
