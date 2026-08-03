@@ -193,6 +193,7 @@ export interface EngineInfo {
   device?: string | null;
   model?: string | null;
   latency_hint?: string | null;
+  requires_gpu?: boolean;
   default?: boolean;
   error?: string;
 }

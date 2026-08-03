@@ -234,6 +234,15 @@ def delete(track_id: str, authorization: str | None = Header(default=None), x_cl
     return {"deleted": True}
 
 
+def _is_cpu_only():
+    """Cheap check: is there no CUDA device? (imports torch only, no model load)"""
+    try:
+        import torch
+        return not torch.cuda.is_available()
+    except Exception:
+        return True
+
+
 def _generate_with_fallback(fn, prompt, req, settings=None):
     """Run the engine the client asked for, falling back to the fast engine.
 
@@ -246,6 +255,20 @@ def _generate_with_fallback(fn, prompt, req, settings=None):
 
     settings = settings or {}
     choice = getattr(req, "engine", "auto") or "auto"
+    if choice == "musicgen" and _is_cpu_only():
+        # MusicGen on CPU is ~28x slower than realtime: a 10s clip takes ~5 min
+        # and a full track 30+ min, which looks like an endless hang. When only
+        # a CPU is available, serve the instant engine with a clear note so the
+        # user always gets a track back.
+        provider = get_provider("fast")
+        L, R, meta = provider.generate(prompt, {
+            "duration_s": req.duration_s,
+            "mode": settings.get("mode", "prompt"),
+            **settings,
+        })
+        meta["notice"] = ("MusicGen needs a GPU to run in reasonable time; "
+                          "generated with the Fast engine instead.")
+        return L, R, meta
     try:
         if choice == "fast":
             provider = get_provider("fast")

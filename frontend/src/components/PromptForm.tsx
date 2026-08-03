@@ -40,6 +40,8 @@ export default function PromptForm({ onGenerated, onError }: Props) {
     const e = engines.find((x) => x.id === engine);
     if (!e) return "";
     if (!e.available) return "Not available on this machine";
+    if (e.requires_gpu)
+      return "This machine has no GPU - MusicGen would be 30x slower, so Fast will be used";
     return e.latency_hint || "";
   }
 
@@ -118,28 +120,28 @@ export default function PromptForm({ onGenerated, onError }: Props) {
 
       <label className="field-label">Engine</label>
       <div className="engine-switch">
-        {engines.map((e) => (
-          <button
-            key={e.id}
-            type="button"
-            className={"engine-opt" + (engine === e.id ? " active" : "") + (e.available ? "" : " disabled")}
-            onClick={() => e.available && setEngine(e.id)}
-            title={e.error || e.description}
-          >
-            {e.id === "musicgen" ? "AI MusicGen" : "Fast synth"}
-            {!e.available && <span className="engine-offline"> offline</span>}
-          </button>
-        ))}
+        {engines.map((e) => {
+          const needsGpu = e.id === "musicgen" && e.requires_gpu;
+          return (
+            <button
+              key={e.id}
+              type="button"
+              className={"engine-opt" + (engine === e.id ? " active" : "") + (e.available ? "" : " disabled")}
+              onClick={() => e.available && setEngine(e.id)}
+              title={e.error || e.description}
+            >
+              {e.id === "musicgen" ? "AI MusicGen" : "Fast synth"}
+              {needsGpu && <span className="engine-offline"> needs GPU</span>}
+            </button>
+          );
+        })}
         <span className="engine-hint">{engineHint()}</span>
       </div>
 
       <button className="gen-btn" onClick={() => submit()} disabled={loading || !prompt.trim()}>
         {loading ? (
           <>
-            <span className="spinner" />{" "}
-            {engine === "musicgen"
-              ? "MusicGen is generating (can take a few minutes on CPU)..."
-              : "Arranging instruments and mixing..."}
+            <span className="spinner" /> Arranging instruments and mixing...
           </>
         ) : (
           "Generate Track"
@@ -163,6 +165,11 @@ export default function PromptForm({ onGenerated, onError }: Props) {
       {result && (
         <div className="result">
           <h3>Track generated</h3>
+          {result.meta.notice && (
+            <div className="notice">
+              <strong>Note:</strong> {result.meta.notice}
+            </div>
+          )}
           <div className="chips">
             <span className="chip">{result.meta.genre_name}</span>
             <span className="chip">Key of {result.meta.key}</span>

@@ -228,11 +228,22 @@ def _musicgen_status():
         return status
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model_id = os.environ.get("SONGFORGE_MUSICGEN_MODEL", MusicGenEngine.DEFAULT_MODEL)
-    status.update({
-        "available": True,
-        "device": device,
-        "model": model_id,
-        "latency_hint": "minutes on CPU" if device == "cpu" else "near realtime on GPU",
-        "default": device != "cpu",
-    })
+    if device == "cpu":
+        status.update({
+            "available": True,
+            "device": device,
+            "model": model_id,
+            "latency_hint": "needs a GPU - falls back to Fast on this machine",
+            "requires_gpu": True,
+            "default": False,
+        })
+    else:
+        status.update({
+            "available": True,
+            "device": device,
+            "model": model_id,
+            "latency_hint": "near realtime on GPU",
+            "requires_gpu": False,
+            "default": True,
+        })
     return status

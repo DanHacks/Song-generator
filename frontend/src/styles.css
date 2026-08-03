@@ -335,6 +335,15 @@ textarea {
   color: #64748b;
   margin-left: 4px;
 }
+.notice {
+  background: #3b2f12;
+  border: 1px solid #a16207;
+  color: #fde68a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
 .structure {
   margin-top: 14px;
   background: #0b1424;
