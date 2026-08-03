@@ -170,14 +170,69 @@ def get_provider(name=None):
     """Factory.
 
     - name="musicgen": MusicGen, raises MusicGenUnavailable if not available.
-    - name="samples": hybrid sample+synth engine.
+    - name="samples"/"fast": hybrid sample+synth engine (<1s, fully offline).
     - name=None (default): MusicGen primary, hybrid samples fallback.
     """
     if name == "musicgen":
         return MusicGenEngine()
-    if name == "samples":
+    if name in ("samples", "fast"):
         return SampleEngine()
     try:
         return MusicGenEngine()
     except MusicGenUnavailable:
         return SampleEngine()
+
+
+def get_engines():
+    """Machine-readable engine list for the UI switch (never raises, no heavy load)."""
+    fast = SampleEngine()
+    out = [
+        {
+            "id": "fast",
+            "label": "Fast",
+            "description": "Instant sample+synth studio (offline, seconds)",
+            "available": True,
+            "device": "cpu",
+            "latency_hint": "<1s per request",
+            "default": True,
+        },
+    ]
+    musicgen = _musicgen_status()
+    out.append(musicgen)
+    return {"engines": out, "default": "fast"}
+
+
+def _musicgen_status():
+    """Report MusicGen availability without forcing the full weight load.
+
+    Only imports torch/transformers and checks deps + a cached model dir, so the
+    engines list stays snappy. The real (potentially slow) load happens lazily on
+    the first generation request.
+    """
+    import os
+
+    status = {
+        "id": "musicgen",
+        "label": "MusicGen",
+        "description": "AI neural music (rich, slow on CPU)",
+    }
+    try:
+        import torch
+        try:
+            import transformers  # noqa: F401
+        except ImportError:
+            raise ImportError("transformers not installed")
+    except ImportError as exc:
+        status.update({"available": False, "device": None, "latency_hint": None,
+                       "error": "Missing deps (transformers/torch): %s" % exc})
+        return status
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model_id = os.environ.get("SONGFORGE_MUSICGEN_MODEL", MusicGenEngine.DEFAULT_MODEL)
+    status.update({
+        "available": True,
+        "device": device,
+        "model": model_id,
+        "latency_hint": "minutes on CPU" if device == "cpu" else "near realtime on GPU",
+        "default": device != "cpu",
+    })
+    return status

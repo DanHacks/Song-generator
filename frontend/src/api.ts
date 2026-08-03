@@ -67,8 +67,8 @@ export function authHeaders(): Record<string, string> {
   return token ? { Authorization: "Bearer " + token } : {};
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(BASE + path, {
+export function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return fetch(BASE + path, {
     ...options,
     headers: {
       "X-Client-Id": clientId!,
@@ -76,18 +76,38 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
       ...authHeaders(),
       ...(options.headers || {}),
     },
-  });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const body = await res.json();
-      msg = body.detail || msg;
-    } catch {
-      /* ignore */
+  }).then(async (res) => {
+    if (!res.ok) {
+      let msg = res.statusText;
+      try {
+        const body = await res.json();
+        msg = body.detail || msg;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
     }
-    throw new Error(msg);
+    return res.json() as Promise<T>;
+  });
+}
+
+export async function apiTimeout<T>(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = 120000,
+): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await api<T>(path, { ...options, signal: ctrl.signal });
+  } catch (err) {
+    if (ctrl.signal.aborted) {
+      throw new Error("Generation took too long and was cancelled. Try the Fast engine.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 export function signup(username: string, password: string) {
@@ -108,11 +128,40 @@ export function getMe() {
   return api<{ username: string; client_id: string }>("/api/auth/me");
 }
 
-export function generatePrompt(prompt: string, duration: number) {
-  return api("/api/generate/prompt", {
+export function generatePrompt(
+  prompt: string,
+  duration: number,
+  engine = "fast",
+  genre = "",
+) {
+  return apiTimeout("/api/generate/prompt", {
     method: "POST",
-    body: JSON.stringify({ prompt, duration_s: duration }),
-  });
+    body: JSON.stringify({
+      prompt,
+      duration_s: duration,
+      engine,
+      genre: genre || null,
+    }),
+  }, engine === "musicgen" ? 600000 : 120000);
+}
+
+export interface GenreInfo {
+  id: string;
+  icon: string;
+  name: string;
+  tagline: string;
+  bpm: number;
+  moods: string[];
+  palette: string[];
+}
+
+export interface GenresResponse {
+  genres: GenreInfo[];
+  supported: string[];
+}
+
+export function getGenres() {
+  return api<GenresResponse>("/api/genres");
 }
 
 export function generateLyrics(
@@ -121,6 +170,7 @@ export function generateLyrics(
   genre: string,
   vocalStyle = "none",
   voice = "",
+  engine = "fast",
 ) {
   return api("/api/generate/lyrics", {
     method: "POST",
@@ -130,8 +180,30 @@ export function generateLyrics(
       genre: genre || null,
       vocal_style: vocalStyle,
       voice: voice || null,
+      engine,
     }),
   });
+}
+
+export interface EngineInfo {
+  id: string;
+  label: string;
+  description: string;
+  available: boolean;
+  device?: string | null;
+  model?: string | null;
+  latency_hint?: string | null;
+  default?: boolean;
+  error?: string;
+}
+
+export interface EnginesResponse {
+  engines: EngineInfo[];
+  default: string;
+}
+
+export function getEngines() {
+  return api<EnginesResponse>("/api/engines");
 }
 
 export const VOICES = [

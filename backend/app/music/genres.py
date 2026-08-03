@@ -230,3 +230,72 @@ MOOD_WORDS = {
     "worship": ["worship", "praise", "lord", "god", "jesus", "amen", "holy"],
     "love": ["love", "romance", "baby", "kiss", "heart"],
 }
+
+
+# UI catalog: icon + friendly copy per genre. Icons are plain emoji so the
+# frontend needs no image assets.
+GENRE_CATALOG = {
+    "afrobeats": {
+        "id": "afrobeats",
+        "icon": "🥁",
+        "name": "Afrobeats",
+        "tagline": "Rhythmic Nigerian groove",
+        "bpm": GENRES["afrobeats"]["bpm"],
+        "moods": ["party", "vibey", "dance"],
+        "palette": ["drum kit", "log drums", "keys", "bass"],
+    },
+    "gospel": {
+        "id": "gospel",
+        "icon": "🙏",
+        "name": "Gospel / Worship",
+        "tagline": "Lifted, reverent praise",
+        "bpm": GENRES["gospel"]["bpm"],
+        "moods": ["worship", "joyful", "uplifting"],
+        "palette": ["pads", "piano", "drums", "bass", "choir"],
+    },
+    "hiphop": {
+        "id": "hiphop",
+        "icon": "🎤",
+        "name": "Hip-Hop",
+        "tagline": "Boom-bap street anthem",
+        "bpm": GENRES["hiphop"]["bpm"],
+        "moods": ["hype", "dark", "street"],
+        "palette": ["808", "snare", "keys", "bass"],
+    },
+    "amapiano": {
+        "id": "amapiano",
+        "icon": "🎹",
+        "name": "Amapiano",
+        "tagline": "South-African log-drum dance",
+        "bpm": GENRES["amapiano"]["bpm"],
+        "moods": ["chill", "dance", "summer"],
+        "palette": ["log drums", "keys", "shaker", "bass"],
+    },
+    "ballad": {
+        "id": "ballad",
+        "icon": "🎻",
+        "name": "Ballad",
+        "tagline": "Slow, emotional love song",
+        "bpm": GENRES["ballad"]["bpm"],
+        "moods": ["love", "sad", "romantic"],
+        "palette": ["piano", "guitar", "strings", "bass"],
+    },
+    "edm": {
+        "id": "edm",
+        "icon": "⚡",
+        "name": "EDM",
+        "tagline": "Festival banger, four-on-the-floor",
+        "bpm": GENRES["edm"]["bpm"],
+        "moods": ["party", "energy", "festival"],
+        "palette": ["synths", "kick", "arps", "pads"],
+    },
+    "dancehall": {
+        "id": "dancehall",
+        "icon": "🌴",
+        "name": "Dancehall",
+        "tagline": "Caribbean riddim bounce",
+        "bpm": GENRES["dancehall"]["bpm"],
+        "moods": ["island", "summer", "party"],
+        "palette": ["riddim bass", "keys", "percussion", "lead"],
+    },
+}

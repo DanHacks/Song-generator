@@ -324,11 +324,8 @@ def _mix(track, bpm, genre_name, root_midi, scale_name, seed, sections=None):
     L = engine.sidechain(L, duck_pos, bpm=bpm)
     R = engine.sidechain(R, duck_pos, bpm=bpm)
 
-    L = engine.softclip(L, 0.4)
-    R = engine.softclip(R, 0.4)
-    peak = max(np.max(np.abs(L)), np.max(np.abs(R)), 1e-9)
-    L = L / peak * 0.9
-    R = R / peak * 0.9
+    # full mastering bus: EQ tilt + stereo width + soft-clip limiter
+    L, R = engine.master_chain(L, R, width=1.25, drive=0.32)
     L = engine.fade_out(L, 3.0)
     R = engine.fade_out(R, 3.0)
     return L, R
@@ -376,16 +373,18 @@ def _adjust_bpm(text, bpm):
     return int(round(bpm * factor))
 
 
-def generate_from_prompt(prompt, duration_s=40.0, seed=None):
-    genre_name = _find_genre(prompt)
+def generate_from_prompt(prompt, duration_s=40.0, seed=None, genre_name=None,
+                         key=None, scale_name=None, transpose=0):
+    genre_name = genre_name or _find_genre(prompt)
     key_name, mode = _find_key(prompt)
     if key_name:
         root_midi = name_to_midi(key_name)
         scale_name = mode
     else:
         rng = np.random.default_rng(seed if seed is not None else _seed_for(prompt))
-        root_midi = 60 + int(rng.integers(0, 12))
-        scale_name = GENRES[genre_name]["scale"]
+        root_midi = key and name_to_midi(key) or 60 + int(rng.integers(0, 12))
+        scale_name = scale_name or GENRES[genre_name]["scale"]
+    root_midi += transpose
     bpm = _adjust_bpm(prompt, GENRES[genre_name]["bpm"])
     melody = random_melody(root_midi, scale_name, 16, bpm, seed=seed)
     L, R = generate_track(genre_name, bpm, root_midi, scale_name, duration_s, melody=melody, seed=seed)

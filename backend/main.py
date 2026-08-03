@@ -61,6 +61,13 @@ def _render_and_store(client_id, L, R, meta):
     return track_id, final, meta
 
 
+@app.get("/api/genres")
+def genres_endpoint():
+    """Genre catalog with icons for the UI picker."""
+    from app.music.genres import GENRE_CATALOG, GENRES
+    return {"genres": list(GENRE_CATALOG.values()), "supported": list(GENRES.keys())}
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -79,18 +86,26 @@ def plans():
 
 @app.get("/api/engine")
 def engine_status():
-    """Which generation engine is active (musicgen primary, samples fallback)."""
+    """Which generation engine would be active now (musicgen primary, samples fallback)."""
     from app.music.provider import get_provider, MusicGenUnavailable
     try:
         p = get_provider()
     except MusicGenUnavailable:
         p = None
     return {
-        "engine": p.name if p else "samples",
+        "engine": p.name if p else "None",
         "device": getattr(p, "device", None),
         "model": getattr(p, "model_name", None),
         "capabilities": p.capabilities if p else {},
     }
+
+
+@app.get("/api/engines")
+def engines_list():
+    """Available engines for the UI engine switch."""
+    from app.music.provider import get_provider, get_engines
+
+    return get_engines()
 
 
 @app.post("/api/auth/signup")
@@ -220,34 +235,47 @@ def delete(track_id: str, authorization: str | None = Header(default=None), x_cl
 
 
 def _generate_with_fallback(fn, prompt, req, settings=None):
-    """Run the primary engine, falling back to the hybrid sample engine.
+    """Run the engine the client asked for, falling back to the fast engine.
 
-    MusicGen is primary; if it is unavailable or fails, the sample+synth engine
-    (already wired into generator.py) is used so generation never breaks.
+    req.engine:
+      - "fast"   -> always the hybrid sample+synth engine (<1s, offline).
+      - "musicgen" -> MusicGen only; falls back to samples if unavailable.
+      - "auto"   -> MusicGen primary (if available), samples fallback.
     """
+    from app.music.provider import get_provider, MusicGenUnavailable
+
     settings = settings or {}
+    choice = getattr(req, "engine", "auto") or "auto"
     try:
-        provider = get_provider()
-        if provider.name == "musicgen":
-            # expand the prompt through SongDirector for a rich condition
-            expanded = direct(prompt, duration_s=req.duration_s,
-                              overrides={"genre": settings.get("genre")})
-            mg_prompt = expanded["prompt_mg"]
-            meta = {
-                "mode": settings.get("mode", "prompt"),
-                "director": expanded["spec"],
-            }
-            L, R, meta = provider.generate(mg_prompt, {
+        if choice == "fast":
+            provider = get_provider("fast")
+            L, R, meta = provider.generate(prompt, {
                 "duration_s": req.duration_s,
                 "mode": settings.get("mode", "prompt"),
-                "_meta": meta,
-                **(settings or {}),
+                **settings,
             })
             return L, R, meta
-    except MusicGenUnavailable:
-        pass
-    except Exception as exc:
-        print("[warn] MusicGen generation failed, falling back: %s" % exc)
+        provider = get_provider("musicgen")
+        # expand the prompt through SongDirector for a rich condition
+        expanded = direct(prompt, duration_s=req.duration_s,
+                          overrides={"genre": settings.get("genre")})
+        mg_prompt = expanded["prompt_mg"]
+        meta = {
+            "mode": settings.get("mode", "prompt"),
+            "director": expanded["spec"],
+        }
+        L, R, meta = provider.generate(mg_prompt, {
+            "duration_s": req.duration_s,
+            "mode": settings.get("mode", "prompt"),
+            "_meta": meta,
+            **settings,
+        })
+        return L, R, meta
+    except (MusicGenUnavailable, Exception) as exc:
+        if choice == "musicgen":
+            print("[warn] MusicGen unavailable, falling back to fast engine: %s" % exc)
+        elif not isinstance(exc, MusicGenUnavailable):
+            print("[warn] %s generation failed, falling back: %s" % (choice, exc))
     return fn(req)
 
 

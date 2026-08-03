@@ -89,7 +89,11 @@ async def _synth(text, voice, rate, pitch):
 
 
 def tts_line(text, voice=DEFAULT_VOICE, rate="+0%", pitch="+0Hz"):
-    """Synthesize a line. Returns (audio float32 mono SR, word events)."""
+    """Synthesize a line. Returns (audio float32 mono SR, word events).
+
+    edge-tts is tried first; if it is unreachable (no network) we fall back to
+    the on-device Parler-TTS model so vocals still render offline.
+    """
     path = _cache_path(text, voice, rate, pitch)
     mp3 = _MP3_CACHE.get(path)
     words = None
@@ -99,18 +103,36 @@ def tts_line(text, voice=DEFAULT_VOICE, rate="+0%", pitch="+0Hz"):
                 mp3 = f.read()
         else:
             mp3, words = _run_sync(_synth(text, voice, rate, pitch))
-            with open(path, "wb") as f:
-                f.write(mp3)
-            _MP3_CACHE[path] = mp3
+            if mp3:
+                with open(path, "wb") as f:
+                    f.write(mp3)
+                _MP3_CACHE[path] = mp3
     if words is None:
         words = []
-    audio = _decode_mp3(mp3)
+    audio = _decode_mp3(mp3) if mp3 else None
+    if audio is None:
+        audio = _local_tts(text, voice)
     if audio is None:
         return None, []
     return audio, words
 
 
 _BASE_F0_CACHE = {}
+
+
+def _local_tts(text, voice):
+    """On-device TTS fallback (Parler) when edge-tts has no network."""
+    try:
+        from . import vocals_local
+
+        audio, _ = vocals_local.synthetic_line(text, voice=voice, sr=SR)
+        return audio
+    except Exception as exc:
+        _local_tts.last_error = exc
+        return None
+
+
+_local_tts.last_error = None
 
 
 def _voice_base_f0(voice):

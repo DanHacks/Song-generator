@@ -278,6 +278,48 @@ def softclip(audio, drive=0.45):
     return np.tanh(audio * drive)
 
 
+def eq_tilt(audio, low=1.0, high=1.0):
+    """Light one-pole shelving EQ. low<1 darkens, high>1 adds air."""
+    from scipy import signal as _sig
+
+    out = audio.astype(np.float32)
+    dt = 1.0 / SR
+    rc_l = 1.0 / (2 * np.pi * 240)
+    rc_h = 1.0 / (2 * np.pi * 3800)
+    a_l = dt / (rc_l + dt)
+    a_h = dt / (rc_h + dt)
+    # low shelf: y = x + (low-1)*lp
+    lp_b = [a_l]
+    lp_a = [1, -(1 - a_l)]
+    lp = _sig.lfilter(lp_b, lp_a, out).astype(np.float32)
+    # high shelf via highpass y = x - lp
+    hp = (out - lp).astype(np.float32)
+    return (out * (1.0) + lp * (low - 1.0) + hp * (high - 1.0)).astype(np.float32)
+
+
+def stereo_width(L, R, amount=1.25):
+    """Mid/side widening. amount>1 widens, <1 narrows."""
+    mid = (L + R) * 0.5
+    side = (L - R) * 0.5 * amount
+    return mid + side, mid - side
+
+
+def master_chain(L, R, width=1.25, drive=0.32):
+    """Full mastering bus: EQ tilt -> stereo width -> soft-clip -> normalize.
+
+    Gives a fuller, wider, louder mix with the polish of a real master.
+    """
+    L = eq_tilt(L, low=1.05, high=1.08)
+    R = eq_tilt(R, low=1.05, high=1.08)
+    L, R = stereo_width(L, R, amount=width)
+    L = softclip(L, drive)
+    R = softclip(R, drive)
+    peak = max(np.max(np.abs(L)), np.max(np.abs(R)), 1e-9)
+    L = L / peak * 0.92
+    R = R / peak * 0.92
+    return L, R
+
+
 def normalize(audio, peak=0.92):
     m = np.max(np.abs(audio)) + 1e-9
     return audio / m * peak

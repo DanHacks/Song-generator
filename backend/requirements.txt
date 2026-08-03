@@ -12,3 +12,8 @@ torchaudio>=2.4
 transformers>=4.46
 accelerate>=0.34
 scipy>=1.13
+
+# Local on-device TTS fallback when edge-tts has no network (optional; large).
+# Install then fetch a model once: parler-tts/parler-tts-mini-v1 (via
+# SONGFORGE_TTS_MODEL). Skip if you always have internet for edge-tts.
+parler-tts>=0.1

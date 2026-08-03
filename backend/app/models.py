@@ -8,6 +8,7 @@ class PromptRequest(BaseModel):
     prompt: str = Field(..., min_length=2, max_length=500)
     duration_s: float = Field(40.0, ge=10, le=600)
     genre: Optional[str] = None
+    engine: Optional[str] = Field("fast", pattern="^(auto|musicgen|fast)$")
 
 
 class LyricsRequest(BaseModel):
@@ -16,6 +17,7 @@ class LyricsRequest(BaseModel):
     genre: Optional[str] = None
     vocal_style: Optional[str] = Field("none", pattern="^(none|singing|spoken)$")
     voice: Optional[str] = None
+    engine: Optional[str] = Field("fast", pattern="^(auto|musicgen|fast)$")
 
 
 class TTSRequest(BaseModel):
